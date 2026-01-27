@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Clarity Companion
 
-## Getting Started
+Clarity Companion is a website-first reading simplifier that offers instant, client-side analysis and optional AI-powered simplification per paragraph. It is designed to support a future browser extension.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Paste text and get readability insights, keyword highlights, and key sentences.
+- Opt-in AI simplification per paragraph (no streaming responses).
+- Auth.js OAuth login with Google and GitHub.
+- Supabase Postgres persistence for profiles, usage, and cached simplifications.
+- Stripe subscriptions with Free, Starter, and Pro tiers plus a 14-day free trial.
+- Extension token minting endpoint ready for browser extension integration.
+
+## PowerShell setup (Windows)
+
+1. Install dependencies:
+
+```powershell
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Create a `.env.local` file based on `.env.example` and fill in all secrets.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Apply the Supabase schema:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Open the Supabase SQL editor.
+- Paste the contents of `supabase/schema.sql`.
+- Run the query.
 
-## Learn More
+4. Configure OAuth redirect URLs:
 
-To learn more about Next.js, take a look at the following resources:
+- Local: `http://localhost:3000/api/auth/callback/google` and `http://localhost:3000/api/auth/callback/github`
+- Production: `https://your-domain.com/api/auth/callback/google` and `https://your-domain.com/api/auth/callback/github`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+5. Configure Stripe webhooks:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Local testing:
 
-## Deploy on Vercel
+```powershell
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Production: set the webhook endpoint to `https://your-domain.com/api/stripe/webhook`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+6. Run the development server:
+
+```powershell
+npm run dev
+```
+
+Open `http://localhost:3000` in your browser.
+
+## Environment variables
+
+See `.env.example` for the full list of required environment variables.
