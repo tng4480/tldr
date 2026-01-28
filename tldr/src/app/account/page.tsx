@@ -1,21 +1,12 @@
 "use client";
 
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Container,
-  Group,
-  List,
-  Loader,
-  Stack,
-  Text,
-  Title,
-} from "@mantine/core";
-import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useSession } from "next-auth/react";
 
 type ProfileData = {
   email: string | null;
@@ -109,101 +100,112 @@ export default function AccountPage() {
 
   if (status === "loading") {
     return (
-      <Stack gap="xl">
+      <div className="flex min-h-screen flex-col bg-slate-50">
         <SiteHeader />
-        <Container size="lg" py="xl">
-          <Group>
-            <Loader />
-            <Text>Loading session…</Text>
-          </Group>
-        </Container>
-      </Stack>
+        <main className="mx-auto w-full max-w-6xl px-6 py-16">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+            Loading session…
+          </div>
+        </main>
+      </div>
     );
   }
 
   if (!session?.user) {
     return (
-      <Stack gap="xl">
+      <div className="flex min-h-screen flex-col bg-slate-50">
         <SiteHeader />
-        <Container size="lg" py="xl">
-          <Alert color="indigo" title="Sign in required">
-            Sign in to view your account details and manage your subscription.
+        <main className="mx-auto w-full max-w-6xl px-6 py-16">
+          <Alert>
+            <AlertTitle>Sign in required</AlertTitle>
+            <AlertDescription>
+              Sign in to view your account details and manage your subscription.
+            </AlertDescription>
           </Alert>
-        </Container>
-      </Stack>
+        </main>
+      </div>
     );
   }
 
   return (
-    <Stack gap="xl">
+    <div className="flex min-h-screen flex-col bg-slate-50">
       <SiteHeader />
-      <Container size="lg" py="xl">
-        <Stack gap="lg">
-          <Group justify="space-between" align="center">
-            <Title order={2}>Your account</Title>
-            <Button variant="light" loading={portalLoading} onClick={handlePortal}>
-              Manage subscription
+      <main className="mx-auto w-full max-w-6xl px-6 py-16">
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h1 className="text-3xl font-semibold text-slate-900">Your account</h1>
+            <Button variant="outline" onClick={handlePortal} disabled={portalLoading}>
+              {portalLoading ? "Opening portal…" : "Manage subscription"}
             </Button>
-          </Group>
-          {error ? <Alert color="red">{error}</Alert> : null}
+          </div>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>Something went wrong</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
           {loading ? (
-            <Group>
-              <Loader />
-              <Text>Loading account details…</Text>
-            </Group>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+              Loading account details…
+            </div>
           ) : profile ? (
-            <Stack gap="lg">
-              <Card withBorder>
-                <Stack gap="sm">
-                  <Title order={4}>Plan overview</Title>
-                  <Group gap="xs">
-                    <Badge color="indigo">Plan: {profile.plan}</Badge>
-                    <Badge color="teal">Status: {profile.subscription_status}</Badge>
-                    {profile.cancel_at_period_end ? (
-                      <Badge color="orange">Cancels at period end</Badge>
-                    ) : null}
-                  </Group>
-                  <List spacing="xs">
-                    <List.Item>Email: {profile.email ?? "Unknown"}</List.Item>
-                    <List.Item>Monthly usage: {profile.monthly_usage}</List.Item>
-                    <List.Item>Monthly limit: {profile.monthly_limit}</List.Item>
-                    <List.Item>Usage period: {profile.monthly_usage_period || "Not set"}</List.Item>
-                    <List.Item>
-                      Trial active: {profile.trial_active ? "Yes" : "No"}
-                    </List.Item>
-                    <List.Item>
-                      Trial ends: {profile.trial_ends_at ? new Date(profile.trial_ends_at).toLocaleDateString() : "N/A"}
-                    </List.Item>
-                    <List.Item>
-                      Current period end: {profile.current_period_end ? new Date(profile.current_period_end).toLocaleDateString() : "N/A"}
-                    </List.Item>
-                  </List>
-                </Stack>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Plan overview</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary">Plan: {profile.plan}</Badge>
+                    <Badge variant="secondary">Status: {profile.subscription_status}</Badge>
+                    {profile.cancel_at_period_end ? <Badge variant="warning">Cancels at period end</Badge> : null}
+                  </div>
+                  <ul className="space-y-2 text-sm text-slate-700">
+                    <li>Email: {profile.email ?? "Unknown"}</li>
+                    <li>Monthly usage: {profile.monthly_usage}</li>
+                    <li>Monthly limit: {profile.monthly_limit}</li>
+                    <li>Usage period: {profile.monthly_usage_period || "Not set"}</li>
+                    <li>Trial active: {profile.trial_active ? "Yes" : "No"}</li>
+                    <li>
+                      Trial ends:{" "}
+                      {profile.trial_ends_at ? new Date(profile.trial_ends_at).toLocaleDateString() : "N/A"}
+                    </li>
+                    <li>
+                      Current period end:{" "}
+                      {profile.current_period_end
+                        ? new Date(profile.current_period_end).toLocaleDateString()
+                        : "N/A"}
+                    </li>
+                  </ul>
+                </CardContent>
               </Card>
-              <Card withBorder>
-                <Stack gap="sm">
-                  <Title order={4}>Browser extension access</Title>
-                  <Text size="sm" c="dimmed">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Browser extension access</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
                     Generate a token for the upcoming browser extension. Keep it private.
-                  </Text>
-                  <Group>
-                    <Button variant="outline" onClick={handleToken}>
-                      Mint extension token
-                    </Button>
-                  </Group>
+                  </p>
+                  <Button variant="outline" onClick={handleToken} disabled={loading}>
+                    Mint extension token
+                  </Button>
                   {profile.extensionToken ? (
-                    <Alert color="indigo" title="New extension token">
-                      {profile.extensionToken}
+                    <Alert>
+                      <AlertTitle>New extension token</AlertTitle>
+                      <AlertDescription>{profile.extensionToken}</AlertDescription>
                     </Alert>
                   ) : null}
-                </Stack>
+                </CardContent>
               </Card>
-            </Stack>
+            </div>
           ) : (
-            <Text c="dimmed">No profile data available yet.</Text>
+            <p className="text-sm text-muted-foreground">No profile data available yet.</p>
           )}
-        </Stack>
-      </Container>
-    </Stack>
+        </div>
+      </main>
+    </div>
   );
 }

@@ -1,9 +1,9 @@
-import "@mantine/core/styles.css";
 import "./globals.css";
 
 import type { Metadata } from "next";
 import { ReactNode } from "react";
 import Providers from "@/components/Providers";
+import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
   title: "Clarity Companion",
@@ -17,8 +17,11 @@ type RootLayoutProps = {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
-      <body>
-        <Providers>{children}</Providers>
+      <body className="min-h-screen bg-background font-sans antialiased">
+        <Providers>
+          {children}
+          <Toaster richColors />
+        </Providers>
       </body>
     </html>
   );

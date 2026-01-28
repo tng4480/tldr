@@ -1,19 +1,10 @@
 "use client";
 
-import {
-  Badge,
-  Button,
-  Card,
-  Container,
-  Group,
-  List,
-  SimpleGrid,
-  Stack,
-  Text,
-  Title,
-} from "@mantine/core";
-import { useSession } from "next-auth/react";
 import SiteHeader from "@/components/SiteHeader";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useSession } from "next-auth/react";
 
 const tiers = [
   {
@@ -41,8 +32,11 @@ const tiers = [
 
 export default function PricingPage() {
   const { data: session } = useSession();
+
   async function handlePortal() {
-    const response = await fetch("/api/stripe/portal", { method: "POST" });
+    const response = await fetch("/api/stripe/portal", {
+      method: "POST",
+    });
     if (response.ok) {
       const data = await response.json();
       if (data.url) {
@@ -54,7 +48,9 @@ export default function PricingPage() {
   async function handleSubscribe(tier: "starter" | "pro") {
     const response = await fetch("/api/stripe/checkout", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ tier }),
     });
 
@@ -67,58 +63,66 @@ export default function PricingPage() {
   }
 
   return (
-    <Stack gap="xl">
+    <div className="flex min-h-screen flex-col bg-slate-50">
       <SiteHeader />
-      <Container size="lg" py="xl">
-        <Stack gap="lg" align="center">
-          <Badge variant="light" color="indigo" size="lg">
+      <main className="mx-auto w-full max-w-6xl px-6 py-16">
+        <div className="flex flex-col items-center gap-6 text-center">
+          <Badge variant="secondary" className="text-sm">
             14-day trial included
           </Badge>
-          <Title order={2}>Pricing that keeps reading simple.</Title>
-          <Text c="dimmed" ta="center" maw={600}>
+          <h1 className="text-3xl font-semibold text-slate-900">
+            Pricing that keeps reading simple.
+          </h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
             Choose a plan for AI-powered simplification. Local analysis is always included.
-          </Text>
+          </p>
           {session?.user ? (
-            <Button variant="light" onClick={handlePortal}>
+            <Button variant="outline" onClick={handlePortal}>
               Manage subscription
             </Button>
           ) : null}
-          <SimpleGrid cols={{ base: 1, md: 3 }} spacing="lg" w="100%">
-            {tiers.map((tier) => (
-              <Card key={tier.name} withBorder radius="md" padding="lg">
-                <Stack gap="md">
-                  <Group justify="space-between">
-                    <Title order={3}>{tier.name}</Title>
-                    {tier.tier !== "free" ? <Badge color="indigo">Popular</Badge> : null}
-                  </Group>
-                  <Text fw={700} size="xl">
-                    {tier.price}
-                    <Text span size="sm" c="dimmed">
-                      /month
-                    </Text>
-                  </Text>
-                  <Text c="dimmed">{tier.description}</Text>
-                  <List spacing="xs">
-                    {tier.features.map((feature) => (
-                      <List.Item key={feature}>{feature}</List.Item>
-                    ))}
-                  </List>
-                  {tier.tier === "free" ? (
-                    <Button variant="light">Included</Button>
-                  ) : (
-                    <Button
-                      onClick={() => handleSubscribe(tier.tier)}
-                      disabled={!session?.user}
-                    >
-                      {session?.user ? "Start subscription" : "Sign in to subscribe"}
-                    </Button>
-                  )}
-                </Stack>
-              </Card>
-            ))}
-          </SimpleGrid>
-        </Stack>
-      </Container>
-    </Stack>
+        </div>
+        <div className="mt-10 grid gap-6 md:grid-cols-3">
+          {tiers.map((tier) => (
+            <Card key={tier.name}>
+              <CardHeader className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <CardTitle>{tier.name}</CardTitle>
+                  {tier.tier !== "free" ? <Badge>Popular</Badge> : null}
+                </div>
+                <div className="text-3xl font-semibold text-slate-900">
+                  {tier.price}
+                  <span className="text-sm font-normal text-muted-foreground">/month</span>
+                </div>
+                <p className="text-sm text-muted-foreground">{tier.description}</p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ul className="space-y-2 text-sm text-slate-700">
+                  {tier.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2">
+                      <span className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+                {tier.tier === "free" ? (
+                  <Button variant="secondary" className="w-full">
+                    Included
+                  </Button>
+                ) : (
+                  <Button
+                    className="w-full"
+                    onClick={() => handleSubscribe(tier.tier)}
+                    disabled={!session?.user}
+                  >
+                    {session?.user ? "Start subscription" : "Sign in to subscribe"}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </main>
+    </div>
   );
 }
