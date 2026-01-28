@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
@@ -11,7 +12,7 @@ const PRICE_MAP = {
 };
 
 export async function POST(request: Request) {
-  const session = await auth();
+  const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
 
   if (!userId) {

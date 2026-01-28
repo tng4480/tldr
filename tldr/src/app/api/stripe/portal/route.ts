@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
 export async function POST() {
-  const session = await auth();
+  const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
 
   if (!userId) {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { computeStableHash } from "@/lib/textAnalysis";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateEntitlements } from "@/lib/entitlements";
@@ -10,7 +11,7 @@ export const runtime = "nodejs";
 const ALLOWED_LEVELS: SimplifyLevel[] = ["simple", "gcse", "plain"];
 
 export async function POST(request: Request) {
-  const session = await auth();
+  const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
 
   if (!userId) {

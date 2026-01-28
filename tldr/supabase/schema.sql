@@ -1,20 +1,23 @@
 create extension if not exists "pgcrypto";
 
-create table if not exists public.users (
+create schema if not exists next_auth;
+
+-- NextAuth / Auth.js tables (expected by @auth/supabase-adapter)
+create table if not exists next_auth.users (
   id uuid primary key default gen_random_uuid(),
   name text,
   email text unique,
-  email_verified timestamptz,
+  "emailVerified" timestamptz,
   image text,
   created_at timestamptz default now()
 );
 
-create table if not exists public.accounts (
+create table if not exists next_auth.accounts (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.users(id) on delete cascade,
+  "userId" uuid not null references next_auth.users(id) on delete cascade,
   type text,
   provider text not null,
-  provider_account_id text not null,
+  "providerAccountId" text not null,
   refresh_token text,
   access_token text,
   expires_at bigint,
@@ -22,25 +25,28 @@ create table if not exists public.accounts (
   scope text,
   id_token text,
   session_state text,
-  unique(provider, provider_account_id)
+  oauth_token_secret text,
+  oauth_token text,
+  unique(provider, "providerAccountId")
 );
 
-create table if not exists public.sessions (
+create table if not exists next_auth.sessions (
   id uuid primary key default gen_random_uuid(),
-  session_token text not null unique,
-  user_id uuid not null references public.users(id) on delete cascade,
+  "sessionToken" text not null unique,
+  "userId" uuid not null references next_auth.users(id) on delete cascade,
   expires timestamptz not null
 );
 
-create table if not exists public.verification_tokens (
+create table if not exists next_auth.verification_tokens (
+  id bigint generated always as identity primary key,
   identifier text not null,
   token text not null,
   expires timestamptz not null,
-  primary key (identifier, token)
+  unique (identifier, token)
 );
 
 create table if not exists public.user_profiles (
-  id uuid primary key references public.users(id) on delete cascade,
+  id uuid primary key references next_auth.users(id) on delete cascade,
   email text,
   plan text not null default 'free',
   monthly_usage integer not null default 0,
@@ -59,7 +65,7 @@ create table if not exists public.user_profiles (
 
 create table if not exists public.usage_events (
   id bigint generated always as identity primary key,
-  user_id uuid references public.users(id) on delete cascade,
+  user_id uuid references next_auth.users(id) on delete cascade,
   event_type text not null default 'simplify',
   model text,
   input_tokens integer,
@@ -78,7 +84,7 @@ create table if not exists public.cached_simplifications (
 
 create table if not exists public.extension_tokens (
   token_hash text primary key,
-  user_id uuid references public.users(id) on delete cascade,
+  user_id uuid references next_auth.users(id) on delete cascade,
   expires_at timestamptz not null,
   created_at timestamptz default now()
 );

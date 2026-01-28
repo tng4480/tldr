@@ -1,10 +1,10 @@
-import NextAuth from "next-auth";
+import { type NextAuthOptions } from "next-auth";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 import { SupabaseAdapter } from "@auth/supabase-adapter";
 import { ensureUserProfile } from "@/lib/userProfiles";
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const authOptions: NextAuthOptions = {
   adapter: SupabaseAdapter({
     url: process.env.SUPABASE_URL ?? "",
     secret: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
@@ -33,8 +33,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   events: {
     async signIn({ user }) {
       if (user.id) {
-        await ensureUserProfile({ id: user.id, email: user.email, name: user.name });
+        await ensureUserProfile({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        });
       }
     },
   },
-});
+};

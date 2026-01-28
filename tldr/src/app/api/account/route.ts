@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { evaluateEntitlements } from "@/lib/entitlements";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  const session = await auth();
+  const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
 
   if (!userId) {
