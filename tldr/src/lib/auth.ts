@@ -31,6 +31,15 @@ export const authOptions: NextAuthOptions = {
     },
   },
   events: {
+    async createUser({ user }) {
+      if (user.id) {
+        await ensureUserProfile({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        });
+      }
+    },
     async signIn({ user }) {
       if (user.id) {
         await ensureUserProfile({
