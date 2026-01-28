@@ -4,11 +4,12 @@ import { authOptions } from "@/lib/auth";
 import { computeStableHash } from "@/lib/textAnalysis";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateEntitlements } from "@/lib/entitlements";
-import { simplifyWithLlm, SimplifyLevel } from "@/lib/llm";
+import { simplifyWithLlm, SimplifyLevel, SimplifyTone } from "@/lib/llm";
 
 export const runtime = "nodejs";
 
 const ALLOWED_LEVELS: SimplifyLevel[] = ["simple", "gcse", "plain"];
+const ALLOWED_TONES: SimplifyTone[] = ["preserve", "descriptive", "bullets"];
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -21,12 +22,13 @@ export async function POST(request: Request) {
   const body = await request.json();
   const text = typeof body?.text === "string" ? body.text.trim() : "";
   const readingLevel = body?.readingLevel as SimplifyLevel;
+  const tone = (body?.tone as SimplifyTone) ?? "preserve";
 
-  if (!text || !ALLOWED_LEVELS.includes(readingLevel)) {
+  if (!text || !ALLOWED_LEVELS.includes(readingLevel) || !ALLOWED_TONES.includes(tone)) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const contentHash = await computeStableHash(`${text}:${readingLevel}`);
+  const contentHash = await computeStableHash(`${text}:${readingLevel}:${tone}`);
 
   const { data: cached } = await supabaseAdmin
     .from("cached_simplifications")
@@ -71,7 +73,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Monthly limit reached." }, { status: 402 });
   }
 
-  const llmResult = await simplifyWithLlm(text, readingLevel);
+  const llmResult = await simplifyWithLlm(text, readingLevel, tone);
 
   await supabaseAdmin.from("cached_simplifications").insert({
     content_hash: contentHash,

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import type { SimplifyTone } from "@/lib/llm";
 import {
   detectHardSentences,
   extractKeywords,
@@ -33,6 +34,12 @@ const READING_LEVEL_OPTIONS = [
   { value: "plain", label: "Plain" },
 ] as const;
 
+const TONE_OPTIONS: { value: SimplifyTone; label: string }[] = [
+  { value: "preserve", label: "Preserve tone" },
+  { value: "descriptive", label: "Descriptive" },
+  { value: "bullets", label: "Bullet points" },
+];
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -45,6 +52,7 @@ export default function HomePage() {
     loadingIndex: null,
     error: null,
   });
+  const [tone, setTone] = useState<SimplifyTone>("preserve");
 
   const sentences = useMemo(() => splitIntoSentences(text), [text]);
   const keywords = useMemo(() => extractKeywords(text, 8), [text]);
@@ -80,7 +88,7 @@ export default function HomePage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text: paragraph, readingLevel }),
+        body: JSON.stringify({ text: paragraph, readingLevel, tone }),
       });
 
       if (!response.ok) {
@@ -124,20 +132,37 @@ export default function HomePage() {
                 />
               </div>
               <div className="flex flex-wrap items-end justify-between gap-4">
-                <div className="space-y-2">
-                  <Label>Simplification level</Label>
-                  <Select value={readingLevel} onValueChange={(value) => setReadingLevel(value as ReadingLevel)}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Select level" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {READING_LEVEL_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="flex flex-wrap gap-4">
+                  <div className="space-y-2">
+                    <Label>Simplification level</Label>
+                    <Select value={readingLevel} onValueChange={(value) => setReadingLevel(value as ReadingLevel)}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Select level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {READING_LEVEL_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Output tone</Label>
+                    <Select value={tone} onValueChange={(value) => setTone(value as SimplifyTone)}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Tone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TONE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <Badge variant="secondary" className="text-sm">
                   Client-side analysis only
@@ -267,7 +292,18 @@ export default function HomePage() {
                           {simplifiedMap[index] ? (
                             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                               <p className="text-sm font-semibold text-slate-700">Simplified copy</p>
-                              <p className="mt-2 text-sm text-slate-700">{simplifiedMap[index]}</p>
+                              {simplifiedMap[index]
+                                .split(/\n\s*\n+/)
+                                .map((para) => para.trim())
+                                .filter(Boolean)
+                                .map((para, paraIndex) => (
+                                  <p
+                                    key={`simplified-${index}-${paraIndex}`}
+                                    className="mt-2 text-sm text-slate-700 first:mt-3 whitespace-pre-wrap"
+                                  >
+                                    {para}
+                                  </p>
+                                ))}
                             </div>
                           ) : null}
                         </CardContent>
