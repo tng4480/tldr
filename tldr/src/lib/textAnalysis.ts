@@ -34,7 +34,7 @@ export function fleschReadingEase(text: string): number {
   return Math.max(0, Math.min(100, Math.round(score * 10) / 10));
 }
 
-const STOP_WORDS = new Set([
+export const STOP_WORDS = new Set([
   "the",
   "and",
   "that",
@@ -82,6 +82,19 @@ const STOP_WORDS = new Set([
   "can",
   "use",
   "has",
+  "to",
+  "in",
+  "of",
+  "or",
+  "a",
+  "an",
+  "is",
+  "on",
+  "as",
+  "per",
+  "we",
+  "you",
+  "I"
 ]);
 
 export function extractKeywords(text: string, topK = 6): string[] {

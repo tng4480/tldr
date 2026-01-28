@@ -17,6 +17,7 @@ import {
   pickTopSentences,
   splitIntoSentences,
   wordCount,
+  STOP_WORDS,
 } from "@/lib/textAnalysis";
 
 type ReadingLevel = "simple" | "gcse" | "plain";
@@ -40,10 +41,6 @@ const TONE_OPTIONS: { value: SimplifyTone; label: string }[] = [
   { value: "bullets", label: "Bullet points" },
 ];
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 export default function HomePage() {
   const [text, setText] = useState("");
   const [readingLevel, setReadingLevel] = useState<ReadingLevel>("simple");
@@ -56,6 +53,9 @@ export default function HomePage() {
 
   const sentences = useMemo(() => splitIntoSentences(text), [text]);
   const keywords = useMemo(() => extractKeywords(text, 8), [text]);
+  const filteredKeywords = useMemo(() => {
+    return keywords.filter((keyword) => !STOP_WORDS.has(keyword.toLowerCase()));
+  }, [keywords]);
   const hardSentences = useMemo(() => detectHardSentences(sentences), [sentences]);
   const keySentences = useMemo(() => pickTopSentences(sentences, 3), [sentences]);
   const readability = useMemo(() => fleschReadingEase(text), [text]);
@@ -70,15 +70,6 @@ export default function HomePage() {
       .map((paragraph) => paragraph.trim())
       .filter(Boolean);
   }, [text]);
-
-  const keywordRegex = useMemo(() => {
-    if (!keywords.length) {
-      return null;
-    }
-    return new RegExp(`(${keywords.map(escapeRegExp).join("|")})`, "gi");
-  }, [keywords]);
-
-  const keywordSet = useMemo(() => new Set(keywords.map((keyword) => keyword.toLowerCase())), [keywords]);
 
   async function handleSimplify(paragraph: string, index: number) {
     setSimplifyState({ loadingIndex: index, error: null });
@@ -201,15 +192,15 @@ export default function HomePage() {
                 <div className="space-y-2">
                   <p className="text-sm font-semibold">Top keywords</p>
                   <div className="flex flex-wrap gap-2">
-                    {keywords.length ? (
-                      keywords.map((keyword) => (
-                        <Badge key={keyword} variant="outline">
-                          {keyword}
-                        </Badge>
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No keywords yet.</p>
-                    )}
+                  {filteredKeywords.length ? (
+                    filteredKeywords.map((keyword) => (
+                      <Badge key={keyword} variant="outline">
+                        {keyword}
+                      </Badge>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No keywords yet.</p>
+                  )}
                   </div>
                 </div>
               </CardContent>
@@ -221,29 +212,15 @@ export default function HomePage() {
               <CardContent>
                 {sentences.length ? (
                   <p className="text-sm leading-relaxed text-slate-800">
-                    {sentences.map((sentence, index) => {
-                      const content = keywordRegex
-                        ? sentence.split(keywordRegex).map((part, partIndex) =>
-                            keywordSet.has(part.toLowerCase()) ? (
-                              <span key={`${part}-${partIndex}`} className="rounded bg-violet-100 px-1 text-violet-900">
-                                {part}
-                              </span>
-                            ) : (
-                              <span key={`${part}-${partIndex}`}>{part}</span>
-                            ),
-                          )
-                        : sentence;
-
-                      return (
-                        <span key={`${sentence}-${index}`}>
-                          {hardSentences[index] ? (
-                            <mark className="rounded bg-amber-100 px-1 text-amber-900">{content}</mark>
-                          ) : (
-                            content
-                          )}{" "}
-                        </span>
-                      );
-                    })}
+                    {sentences.map((sentence, index) => (
+                      <span key={`${sentence}-${index}`}>
+                        {hardSentences[index] ? (
+                          <mark className="rounded bg-amber-100 px-1 text-amber-900">{sentence}</mark>
+                        ) : (
+                          sentence
+                        )}{" "}
+                      </span>
+                    ))}
                   </p>
                 ) : (
                   <p className="text-sm text-muted-foreground">

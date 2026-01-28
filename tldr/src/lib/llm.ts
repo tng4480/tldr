@@ -38,7 +38,6 @@ export async function simplifyWithLlm(
 
   const client = new Anthropic({
     apiKey,
-   // baseURL: baseUrl,
   });
 
   const prompt = `${TONE_PROMPTS[tone]}\n\nSimplify the following paragraph to ${level} reading level. Return only the simplified paragraph.`;
