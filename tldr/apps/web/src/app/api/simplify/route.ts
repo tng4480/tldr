@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { computeStableHash } from "@/lib/textAnalysis";
+import { computeStableHash } from "@tldr/core";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateEntitlements } from "@/lib/entitlements";
 import { simplifyWithLlm, SimplifyLevel, SimplifyTone } from "@/lib/llm";
