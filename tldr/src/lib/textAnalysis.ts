@@ -210,6 +210,135 @@ export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
     .map(([word]) => word);
 }
 
+type SentenceVector = Map<string, number>;
+
+function buildSentenceVectors(text: string): { sentences: string[]; vectors: SentenceVector[] } {
+  const doc = nlp.readDoc(text);
+  const sentences = doc.sentences();
+  const sentenceCount = sentences.length();
+  if (sentenceCount === 0) {
+    return { sentences: [], vectors: [] };
+  }
+
+  const sentenceTokens: string[][] = [];
+  const documentFrequency = new Map<string, number>();
+
+  sentences.each((sentence) => {
+    const tokens = sentence.tokens().filter((token) => token.out(its.type) === "word");
+    const normalizedWords = tokens
+      .out(its.normal)
+      .map((word) => word.toLowerCase())
+      .filter((word) => word && !STOP_WORDS.has(word));
+    sentenceTokens.push(normalizedWords);
+
+    const uniqueWords = new Set(normalizedWords);
+    uniqueWords.forEach((word) => {
+      documentFrequency.set(word, (documentFrequency.get(word) ?? 0) + 1);
+    });
+  });
+
+  const idf = new Map<string, number>();
+  documentFrequency.forEach((count, word) => {
+    idf.set(word, Math.log((sentenceCount + 1) / (1 + count)) + 1);
+  });
+
+  const vectors = sentenceTokens.map((words) => {
+    const vector = new Map<string, number>();
+    if (!words.length) {
+      return vector;
+    }
+    const counts = new Map<string, number>();
+    words.forEach((word) => {
+      counts.set(word, (counts.get(word) ?? 0) + 1);
+    });
+    const totalWords = words.length;
+    counts.forEach((count, word) => {
+      const tf = count / totalWords;
+      const weight = tf * (idf.get(word) ?? 0);
+      if (weight > 0) {
+        vector.set(word, weight);
+      }
+    });
+    return vector;
+  });
+
+  const sentenceTexts = sentences
+    .out(its.value)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  return { sentences: sentenceTexts, vectors };
+}
+
+function cosineSimilarity(first: SentenceVector, second: SentenceVector): number {
+  if (!first.size || !second.size) {
+    return 0;
+  }
+  let dotProduct = 0;
+  let magnitudeA = 0;
+  let magnitudeB = 0;
+
+  first.forEach((value, key) => {
+    magnitudeA += value * value;
+    if (second.has(key)) {
+      dotProduct += value * (second.get(key) ?? 0);
+    }
+  });
+  second.forEach((value) => {
+    magnitudeB += value * value;
+  });
+
+  const denominator = Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB);
+  if (!denominator) {
+    return 0;
+  }
+  return dotProduct / denominator;
+}
+
+export function segmentTextIntoSubsections(
+  text: string,
+  {
+    minSentences = 2,
+    maxSentences = 5,
+    similarityThreshold = 0.2,
+  }: { minSentences?: number; maxSentences?: number; similarityThreshold?: number } = {},
+): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const { sentences, vectors } = buildSentenceVectors(trimmed);
+  if (!sentences.length) {
+    return [];
+  }
+  if (sentences.length === 1) {
+    return [sentences[0]];
+  }
+
+  const sections: string[] = [];
+  let current: string[] = [sentences[0]];
+
+  for (let index = 1; index < sentences.length; index += 1) {
+    const similarity = cosineSimilarity(vectors[index - 1], vectors[index]);
+    const hasMinimum = current.length >= minSentences;
+    const reachedMax = current.length >= maxSentences;
+
+    if (reachedMax || (hasMinimum && similarity < similarityThreshold)) {
+      sections.push(current.join(" ").trim());
+      current = [sentences[index]];
+    } else {
+      current.push(sentences[index]);
+    }
+  }
+
+  if (current.length) {
+    sections.push(current.join(" ").trim());
+  }
+
+  return sections.filter(Boolean);
+}
+
 export async function computeStableHash(text: string): Promise<string> {
   if (typeof window === "undefined") {
     const { createHash } = await import("crypto");
