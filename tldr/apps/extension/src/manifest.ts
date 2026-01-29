@@ -5,7 +5,7 @@ export default defineManifest(() => ({
   name: "TLDR Reading Assistant",
   version: "0.1.0",
   description: "Inline highlights and side panel reading assistant.",
-  permissions: ["activeTab", "sidePanel", "storage"],
+  permissions: ["activeTab", "sidePanel", "storage", "scripting"],
   host_permissions: ["<all_urls>", "http://localhost:3000/*"],
   background: {
     service_worker: "src/background/serviceWorker.ts",

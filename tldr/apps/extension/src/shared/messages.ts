@@ -11,7 +11,12 @@ export type SidepanelConnect = MessageBase & {
 
 export type ContentConnect = MessageBase & {
   type: "ContentConnect";
-  tabId: number;
+  tabId?: number;
+};
+
+export type ContentReady = MessageBase & {
+  type: "ContentReady";
+  tabId?: number;
 };
 
 export type ExtractRequest = MessageBase & {
@@ -24,6 +29,7 @@ export type ExtractResult = MessageBase & {
   tabId: number;
   text: string;
   sentences: string[];
+  error?: string;
   stats?: {
     wordCount: number;
     readability: number;
@@ -42,11 +48,12 @@ export type ApplyHighlightsAck = MessageBase & {
   type: "ApplyHighlightsAck";
   tabId: number;
   count: number;
+  error?: string;
 };
 
 export type HighlightClicked = MessageBase & {
   type: "HighlightClicked";
-  tabId: number;
+  tabId?: number;
   sentence: string;
   context: string;
 };
@@ -70,6 +77,7 @@ export type LlmActionResult = MessageBase & {
 export type ExtensionMessage =
   | SidepanelConnect
   | ContentConnect
+  | ContentReady
   | ExtractRequest
   | ExtractResult
   | ApplyHighlightsRequest

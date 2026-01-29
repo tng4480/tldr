@@ -14,6 +14,7 @@ import type {
   LlmActionResult,
 } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
+import { log, runtimeLastError, warn } from "../shared/logger";
 
 const panelStyles: React.CSSProperties = {
   display: "flex",
@@ -37,20 +38,32 @@ function App() {
   const [clickedHighlight, setClickedHighlight] = useState<HighlightClicked | null>(null);
   const [llmResult, setLlmResult] = useState<LlmActionResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const getActiveTabId = useCallback(async (): Promise<number | null> => {
+    return await new Promise<number | null>((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        resolve(tabs[0]?.id ?? null);
+      });
+    });
+  }, []);
 
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const id = tabs[0]?.id ?? null;
       if (id !== null) {
         setTabId(id);
+        log("sp", "Active tab resolved", { tabId: id });
         chrome.runtime.sendMessage(
           {
             type: "SidepanelConnect",
             requestId: createRequestId("sidepanel-connect"),
             tabId: id,
           },
-          () => void chrome.runtime.lastError,
+          () => runtimeLastError("sp", "SidepanelConnect sendMessage"),
         );
+      } else {
+        warn("sp", "No active tab found on mount");
       }
     });
   }, []);
@@ -60,14 +73,18 @@ function App() {
       if (!message?.type) {
         return;
       }
+      log("sp", "onMessage", { type: message.type, tabId: (message as any).tabId, requestId: (message as any).requestId });
       if (message.type === "ExtractResult") {
+        setError(message.error ?? null);
         setText(message.text);
         setSentences(message.sentences);
       }
       if (message.type === "ApplyHighlightsAck") {
+        setError(message.error ?? null);
         setHighlightCount(message.count);
       }
       if (message.type === "HighlightClicked") {
+        setError(null);
         setClickedHighlight(message);
         setLlmResult(null);
       }
@@ -95,34 +112,50 @@ function App() {
   }, [text]);
 
   const handleAnalyze = useCallback(() => {
-    if (tabId === null) {
-      return;
-    }
-    chrome.runtime.sendMessage(
-      {
-        type: "ExtractRequest",
-        requestId: createRequestId("extract"),
-        tabId,
-      },
-      () => void chrome.runtime.lastError,
-    );
-  }, [tabId]);
+    void (async () => {
+      const activeId = await getActiveTabId();
+      if (activeId === null) {
+        setError("No active tab.");
+        return;
+      }
+      setTabId(activeId);
+      log("sp", "Analyze clicked", { tabId: activeId });
+      chrome.runtime.sendMessage(
+        {
+          type: "ExtractRequest",
+          requestId: createRequestId("extract"),
+          tabId: activeId,
+        },
+        () => runtimeLastError("sp", "ExtractRequest sendMessage"),
+      );
+    })();
+  }, [getActiveTabId]);
 
   const handleHighlight = useCallback(() => {
-    if (tabId === null || !text.trim()) {
-      return;
-    }
-    const top = pickTopSentences(sentences.length ? sentences : splitIntoSentences(text), 6);
-    chrome.runtime.sendMessage(
-      {
-        type: "ApplyHighlightsRequest",
-        requestId: createRequestId("highlight"),
-        tabId,
-        sentences: top,
-      },
-      () => void chrome.runtime.lastError,
-    );
-  }, [tabId, text, sentences]);
+    void (async () => {
+      const activeId = await getActiveTabId();
+      if (activeId === null) {
+        setError("No active tab.");
+        return;
+      }
+      if (!text.trim()) {
+        setError("Analyze the page first.");
+        return;
+      }
+      setTabId(activeId);
+      const top = pickTopSentences(sentences.length ? sentences : splitIntoSentences(text), 6);
+      log("sp", "Highlight clicked", { tabId: activeId, sentences: top.length });
+      chrome.runtime.sendMessage(
+        {
+          type: "ApplyHighlightsRequest",
+          requestId: createRequestId("highlight"),
+          tabId: activeId,
+          sentences: top,
+        },
+        () => runtimeLastError("sp", "ApplyHighlightsRequest sendMessage"),
+      );
+    })();
+  }, [getActiveTabId, text, sentences]);
 
   const handleAction = useCallback(
     (action: "simplify" | "explain") => {
@@ -130,6 +163,7 @@ function App() {
         return;
       }
       setIsLoading(true);
+      log("sp", "LLM action clicked", { tabId, action, bytes: clickedHighlight.context?.length ?? 0 });
       chrome.runtime.sendMessage(
         {
           type: "LlmActionRequest",
@@ -138,7 +172,7 @@ function App() {
           action,
           text: clickedHighlight.context || clickedHighlight.sentence,
         },
-        () => void chrome.runtime.lastError,
+        () => runtimeLastError("sp", "LlmActionRequest sendMessage"),
       );
     },
     [tabId, clickedHighlight],
@@ -163,6 +197,7 @@ function App() {
             Highlight key sentences
           </button>
         </div>
+        {error ? <div style={{ color: "#fca5a5" }}>{error}</div> : null}
       </div>
 
       <div style={cardStyles}>

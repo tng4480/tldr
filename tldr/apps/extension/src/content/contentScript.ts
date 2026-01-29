@@ -9,11 +9,13 @@ import { splitIntoSentences } from "@tldr/core";
 import type {
   ApplyHighlightsRequest,
   ContentConnect,
+  ContentReady,
   ExtractRequest,
   ExtractResult,
   HighlightClicked,
 } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
+import { log, runtimeLastError, warn } from "../shared/logger";
 
 const HIGHLIGHT_NAME = "tldr-highlight";
 const POPUP_ID = "tldr-inline-popover";
@@ -31,13 +33,15 @@ let observer: MutationObserver | null = null;
 let updateTimeout: number | null = null;
 let styleInjected = false;
 
-function initConnection() {
-  const message: ContentConnect = {
-    type: "ContentConnect",
-    requestId: createRequestId("content-connect"),
-    tabId: -1,
+function signalContentReady() {
+  // This must run only after `chrome.runtime.onMessage.addListener(...)` is registered,
+  // otherwise background may send messages before the content script can receive them.
+  const message: ContentReady = {
+    type: "ContentReady",
+    requestId: createRequestId("content-ready"),
   };
-  chrome.runtime.sendMessage(message, () => void chrome.runtime.lastError);
+  log("cs", "ContentReady", { href: location.href });
+  chrome.runtime.sendMessage(message, () => runtimeLastError("cs", "ContentReady sendMessage"));
 }
 
 function scheduleExtractionRefresh() {
@@ -53,6 +57,7 @@ function refreshNodes() {
   const root = getReadableRoot(document);
   const { nodes } = extractReadableText(root);
   currentNodes = nodes;
+  log("cs", "refreshNodes", { nodes: currentNodes.length, root: root.tagName });
 }
 
 function ensureHighlightStyles() {
@@ -77,6 +82,7 @@ function ensureObserver() {
     scheduleExtractionRefresh();
   });
   observer.observe(document.body, { childList: true, subtree: true });
+  log("cs", "MutationObserver attached");
 }
 
 function clearHighlights() {
@@ -103,6 +109,8 @@ function applyHighlights(sentences: string[]): number {
   const ranges: Range[] = [];
   highlightEntries = [];
 
+  log("cs", "applyHighlights start", { requested: sentenceList.length, textLen: text.length, nodes: nodes.length });
+
   let searchStart = 0;
   for (const sentence of sentenceList) {
     const normalizedSentence = sentence.trim();
@@ -125,9 +133,11 @@ function applyHighlights(sentences: string[]): number {
   }
 
   if ("highlights" in CSS) {
+    log("cs", "applyHighlights using CSS Custom Highlight API", { ranges: ranges.length });
     const highlight = new Highlight(...ranges);
     CSS.highlights.set(HIGHLIGHT_NAME, highlight);
   } else {
+    warn("cs", "applyHighlights using mark fallback (DOM mutation)");
     ranges.forEach((range) => {
       const mark = document.createElement("mark");
       mark.dataset[HIGHLIGHT_NAME] = "true";
@@ -139,6 +149,7 @@ function applyHighlights(sentences: string[]): number {
     });
   }
 
+  log("cs", "applyHighlights done", { applied: highlightEntries.length });
   return highlightEntries.length;
 }
 
@@ -229,11 +240,12 @@ function handleClick(event: MouseEvent) {
   const message: HighlightClicked = {
     type: "HighlightClicked",
     requestId: createRequestId("highlight"),
-    tabId: -1,
     sentence: entry.sentence,
     context: contextText,
   };
+  log("cs", "HighlightClicked", { sentenceLen: entry.sentence.length, contextLen: contextText.length });
   chrome.runtime.sendMessage(message, () => void chrome.runtime.lastError);
+  runtimeLastError("cs", "HighlightClicked sendMessage");
 }
 
 function handleMessage(message: ExtractRequest | ApplyHighlightsRequest) {
@@ -241,6 +253,14 @@ function handleMessage(message: ExtractRequest | ApplyHighlightsRequest) {
     const root = getReadableRoot(document);
     const { text } = extractReadableText(root);
     const sentences = splitIntoSentences(text);
+    const firstSentence = sentences.find((s) => s.trim().length > 0) ?? "";
+    log("cs", "ExtractRequest", {
+      requestId: message.requestId,
+      root: root.tagName,
+      textLen: text.length,
+      sentences: sentences.length,
+      firstSentence,
+    });
     const response: ExtractResult = {
       type: "ExtractResult",
       requestId: message.requestId,
@@ -249,9 +269,11 @@ function handleMessage(message: ExtractRequest | ApplyHighlightsRequest) {
       sentences,
     };
     chrome.runtime.sendMessage(response, () => void chrome.runtime.lastError);
+    runtimeLastError("cs", "ExtractResult sendMessage");
   }
 
   if (message.type === "ApplyHighlightsRequest") {
+    log("cs", "ApplyHighlightsRequest", { requestId: message.requestId, sentences: message.sentences?.length ?? 0 });
     const count = applyHighlights(message.sentences);
     chrome.runtime.sendMessage(
       {
@@ -262,15 +284,19 @@ function handleMessage(message: ExtractRequest | ApplyHighlightsRequest) {
       },
       () => void chrome.runtime.lastError,
     );
+    runtimeLastError("cs", "ApplyHighlightsAck sendMessage");
   }
 }
 
-initConnection();
-refreshNodes();
-ensureObserver();
-
 chrome.runtime.onMessage.addListener((message: ExtractRequest | ApplyHighlightsRequest) => {
+  log("cs", "onMessage", { type: message?.type, requestId: (message as any)?.requestId });
   handleMessage(message);
 });
 
 document.addEventListener("click", handleClick, { capture: true });
+
+// These may be a bit heavier; do them after the message listener is registered so we can receive requests immediately.
+refreshNodes();
+ensureObserver();
+
+signalContentReady();
