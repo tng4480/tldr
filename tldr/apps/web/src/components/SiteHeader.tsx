@@ -20,6 +20,9 @@ export default function SiteHeader() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="ghost">
+            <Link href="/examples/hard-text">Hard text demo</Link>
+          </Button>
+          <Button asChild variant="ghost">
             <Link href="/pricing">Pricing</Link>
           </Button>
           <Button asChild variant="ghost">

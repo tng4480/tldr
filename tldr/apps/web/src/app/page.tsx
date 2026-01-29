@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,7 @@ function escapeRegExp(value: string) {
 }
 
 export default function HomePage() {
+  const didInitFromQuery = useRef(false);
   const [text, setText] = useState("");
   const [readingLevel, setReadingLevel] = useState<ReadingLevel>("simple");
   const [simplifiedMap, setSimplifiedMap] = useState<SimplifiedMap>({});
@@ -75,6 +76,17 @@ export default function HomePage() {
     isLoading: false,
     error: null,
   });
+
+  useEffect(() => {
+    if (didInitFromQuery.current) {
+      return;
+    }
+    const queryText = new URLSearchParams(window.location.search).get("text");
+    if (queryText) {
+      setText(queryText);
+    }
+    didInitFromQuery.current = true;
+  }, []);
 
   const sentences = useMemo(() => splitIntoSentences(text), [text]);
   const keywords = useMemo(() => extractKeywords(text, 8), [text]);

@@ -9,6 +9,9 @@ export const runtime = "nodejs";
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 async function updateSubscriptionProfile(subscription: Stripe.Subscription) {
+  // Stripe's API includes `current_period_end`, but type definitions can vary by version/api config.
+  const currentPeriodEnd = (subscription as Stripe.Subscription & { current_period_end?: number | null })
+    .current_period_end;
   const priceId = subscription.items.data[0]?.price?.id ?? null;
   const plan = mapPriceIdToPlan(priceId);
 
@@ -19,8 +22,8 @@ async function updateSubscriptionProfile(subscription: Stripe.Subscription) {
       monthly_limit: getPlanLimit(plan),
       stripe_subscription_id: subscription.id,
       subscription_status: subscription.status,
-      current_period_end: subscription.current_period_end
-        ? new Date(subscription.current_period_end * 1000).toISOString()
+      current_period_end: currentPeriodEnd
+        ? new Date(currentPeriodEnd * 1000).toISOString()
         : null,
       cancel_at_period_end: subscription.cancel_at_period_end ?? false,
     })
@@ -66,9 +69,16 @@ export async function POST(request: Request) {
     }
     case "invoice.payment_succeeded":
     case "invoice.payment_failed": {
-      const invoice = event.data.object as Stripe.Invoice;
-      if (invoice.subscription) {
-        const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
+      const invoice = event.data.object as Stripe.Invoice & {
+        subscription?: string | Stripe.Subscription | null;
+      };
+      const subscriptionId =
+        typeof invoice.subscription === "string"
+          ? invoice.subscription
+          : invoice.subscription?.id ?? null;
+
+      if (subscriptionId) {
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         await updateSubscriptionProfile(subscription);
       }
       break;

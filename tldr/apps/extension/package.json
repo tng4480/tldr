@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm -w @tldr/core run build && npm -w @tldr/core-dom run build",
     "build": "vite build",
     "lint": "eslint src --ext .ts,.tsx"
   },

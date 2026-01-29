@@ -34,7 +34,7 @@ export function isEditableElement(element: Element | null): boolean {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     return true;
   }
-  return element.isContentEditable;
+  return element instanceof HTMLElement ? element.isContentEditable : false;
 }
 
 export function getReadableRoot(doc: Document): Element {

@@ -4,6 +4,13 @@ import model from "wink-eng-lite-web-model";
 const nlp = winkNLP(model);
 const its = nlp.its;
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+}
+
 export function splitIntoSentences(text: string): string[] {
   const normalised = text.replace(/\s+/g, " ").trim();
   if (!normalised) {
@@ -105,7 +112,7 @@ export const STOP_WORDS = new Set([
   "be",
   "all",
   "must",
-  "along",
+  "along","at", "out", "using"
 ]);
 
 export function extractKeywords(text: string, topK = 6): string[] {
@@ -173,10 +180,9 @@ export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
   const allWords: string[] = [];
   const documentFrequency = new Map<string, number>();
 
-  sentences.each((sentence) => {
-    const tokens = sentence.tokens().filter((token) => token.out(its.type) === "word");
-    const normalizedWords = tokens
-      .out(its.normal)
+  sentences.each((sentence: any) => {
+    const tokens = sentence.tokens().filter((token: any) => token.out(its.type) === "word");
+    const normalizedWords = toStringArray(tokens.out(its.normal))
       .map((word) => word.toLowerCase())
       .filter((word) => word && !STOP_WORDS.has(word));
 
@@ -229,10 +235,9 @@ function buildSentenceVectors(text: string): { sentences: string[]; vectors: Sen
   const sentenceTokens: string[][] = [];
   const documentFrequency = new Map<string, number>();
 
-  sentences.each((sentence) => {
-    const tokens = sentence.tokens().filter((token) => token.out(its.type) === "word");
-    const normalizedWords = tokens
-      .out(its.normal)
+  sentences.each((sentence: any) => {
+    const tokens = sentence.tokens().filter((token: any) => token.out(its.type) === "word");
+    const normalizedWords = toStringArray(tokens.out(its.normal))
       .map((word) => word.toLowerCase())
       .filter((word) => word && !STOP_WORDS.has(word));
     sentenceTokens.push(normalizedWords);
@@ -268,8 +273,7 @@ function buildSentenceVectors(text: string): { sentences: string[]; vectors: Sen
     return vector;
   });
 
-  const sentenceTexts = sentences
-    .out(its.value)
+  const sentenceTexts = toStringArray(sentences.out(its.value))
     .map((sentence) => sentence.trim())
     .filter(Boolean);
 
@@ -346,13 +350,13 @@ export function segmentTextIntoSubsections(
 }
 
 export async function computeStableHash(text: string): Promise<string> {
-  if (typeof window === "undefined") {
-    const { createHash } = await import("crypto");
-    return createHash("sha256").update(text).digest("hex");
-  }
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error("WebCrypto is unavailable in this environment.");
+  }
+  const hashBuffer = await subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -60,7 +60,13 @@ function ensureHighlightStyles() {
     return;
   }
   const style = document.createElement("style");
-  style.textContent = `\n    ::highlight(${HIGHLIGHT_NAME}) {\n      background-color: rgba(250, 204, 21, 0.55);\n    }\n  `;\n  document.head.appendChild(style);\n  styleInjected = true;
+  style.textContent = `
+    ::highlight(${HIGHLIGHT_NAME}) {
+      background-color: rgba(250, 204, 21, 0.55);
+    }
+  `;
+  document.head.appendChild(style);
+  styleInjected = true;
 }
 
 function ensureObserver() {
