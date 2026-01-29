@@ -109,42 +109,44 @@ async function callLlm(request: LlmActionRequest): Promise<LlmActionResult> {
 
 function sendToTab(tabId: number, message: ApplyHighlightsRequest | ExtractRequest) {
   log("bg", "sendToTab", { tabId, type: message.type, requestId: message.requestId });
-  chrome.tabs.sendMessage(tabId, message, () => {
-    const err = chrome.runtime.lastError;
-    if (!err) {
-      log("bg", "sendToTab ok", { tabId, type: message.type, requestId: message.requestId });
-      return;
-    }
+  // chrome.tabs.sendMessage(tabId, message, () => {
+  //   const err = chrome.runtime.lastError;
+  //   if (!err) {
+  //     log("bg", "sendToTab ok", { tabId, type: message.type, requestId: message.requestId });
+  //     return;
+  //   }
 
-    const msg = err.message || "Unable to reach content script on this page.";
-    warn("bg", "sendToTab failed; reporting error to sidepanel", {
-      tabId,
-      type: message.type,
-      requestId: message.requestId,
-      error: msg,
-    });
-    if (message.type === "ExtractRequest") {
-      broadcastToSidepanel({
-        type: "ExtractResult",
-        requestId: message.requestId,
-        tabId,
-        text: "",
-        sentences: [],
-        error: msg,
-      });
-      return;
-    }
+  //   const msg = err.message || "Unable to reach content script on this page.";
+  //   warn("bg", "sendToTab failed; reporting error to sidepanel", {
+  //     tabId,
+  //     type: message.type,
+  //     requestId: message.requestId,
+  //     error: msg,
+  //   });
+  //   if (message.type === "ExtractRequest") {
+  //     broadcastToSidepanel({
+  //       type: "ExtractResult",
+  //       requestId: message.requestId,
+  //       tabId,
+  //       text: "",
+  //       sentences: [],
+  //       error: msg,
+  //     });
+  //     return;
+  //   }
 
-    if (message.type === "ApplyHighlightsRequest") {
-      broadcastToSidepanel({
-        type: "ApplyHighlightsAck",
-        requestId: message.requestId,
-        tabId,
-        count: 0,
-        error: msg,
-      });
-    }
-  });
+  //   if (message.type === "ApplyHighlightsRequest") {
+  //     broadcastToSidepanel({
+  //       type: "ApplyHighlightsAck",
+  //       requestId: message.requestId,
+  //       tabId,
+  //       count: 0,
+  //       error: msg,
+  //     });
+  //   }
+  // });
+  chrome.tabs.sendMessage(tabId, message);
+
 }
 
 function broadcastToSidepanel(message: ExtractResult | ApplyHighlightsAck | HighlightClicked | LlmActionResult) {
@@ -184,13 +186,21 @@ function resetTabReadiness(tabId: number) {
   pendingByTab.delete(tabId);
 }
 
+// chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+//   // When a tab navigates, any existing content script is torn down. Treat the tab as not-ready
+//   // until it sends ContentReady again for the new document.
+//   if (changeInfo.status === "loading") {
+//     resetTabReadiness(tabId);
+//   }
+// });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  // When a tab navigates, any existing content script is torn down. Treat the tab as not-ready
-  // until it sends ContentReady again for the new document.
-  if (changeInfo.status === "loading") {
+  if (changeInfo.url) {
+    // Real navigation to a new URL
     resetTabReadiness(tabId);
+    log("bg", "Tab navigated, reset readiness", { tabId, url: changeInfo.url });
   }
 });
+
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   resetTabReadiness(tabId);
@@ -227,17 +237,31 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return;
   }
 
+  // if (typed.type === "ContentReady") {
+  //   const ready = message as ContentReady;
+  //   const resolvedTabId = resolveTabId(ready.tabId, sender.tab?.id);
+  //   if (resolvedTabId !== undefined) {
+  //     readyTabs.add(resolvedTabId);
+  //     log("bg", "ContentReady", { tabId: resolvedTabId });
+  //     flushPending(resolvedTabId);
+  //   }
+  //   sendResponse({ ok: true });
+  //   return;
+  // }
+
   if (typed.type === "ContentReady") {
-    const ready = message as ContentReady;
-    const resolvedTabId = resolveTabId(ready.tabId, sender.tab?.id);
-    if (resolvedTabId !== undefined) {
-      readyTabs.add(resolvedTabId);
-      log("bg", "ContentReady", { tabId: resolvedTabId });
-      flushPending(resolvedTabId);
+    const tabId = sender.tab?.id;
+    if (typeof tabId === "number") {
+      readyTabs.add(tabId);
+      log("bg", "ContentReady", { tabId });
+      flushPending(tabId);
+    } else {
+      warn("bg", "ContentReady received without sender.tab.id");
     }
     sendResponse({ ok: true });
     return;
   }
+
 
   if (typed.type === "ExtractRequest") {
     const request = message as ExtractRequest;

@@ -300,3 +300,11 @@ refreshNodes();
 ensureObserver();
 
 signalContentReady();
+refreshNodes();
+ensureObserver();
+
+chrome.runtime.onMessage.addListener((message: ExtractRequest | ApplyHighlightsRequest) => {
+  handleMessage(message);
+});
+
+document.addEventListener("click", handleClick, { capture: true });
