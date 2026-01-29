@@ -16,6 +16,7 @@ import {
   extractKeywords,
   fleschReadingEase,
   pickTopSentences,
+  segmentTextIntoSubsections,
   splitIntoSentences,
   STOP_WORDS,
   wordCount,
@@ -79,13 +80,7 @@ export default function HomePage() {
   }, [highlightTerms]);
 
   const paragraphs = useMemo(() => {
-    if (!text.trim()) {
-      return [];
-    }
-    return text
-      .split(/\n\s*\n/)
-      .map((paragraph) => paragraph.trim())
-      .filter(Boolean);
+    return segmentTextIntoSubsections(text);
   }, [text]);
 
   async function handleSimplify(paragraph: string, index: number) {
