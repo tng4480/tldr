@@ -101,14 +101,19 @@ export const STOP_WORDS = new Set([
   "we",
   "you",
   "I",
-  "it", "be", "all", "must", "along"
+  "it",
+  "be",
+  "all",
+  "must",
+  "along",
 ]);
 
 export function extractKeywords(text: string, topK = 6): string[] {
-  const words = text
-    .toLowerCase()
-    .match(/\b[a-z][a-z\-']+\b/g)
-    ?.filter((word) => !STOP_WORDS.has(word)) ?? [];
+  const words =
+    text
+      .toLowerCase()
+      .match(/\b[a-z][a-z\-']+\b/g)
+      ?.filter((word) => !STOP_WORDS.has(word)) ?? [];
 
   const counts = new Map<string, number>();
   for (const word of words) {

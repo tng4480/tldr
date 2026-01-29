@@ -20,7 +20,7 @@ import {
   splitIntoSentences,
   STOP_WORDS,
   wordCount,
-} from "@/lib/textAnalysis";
+} from "@tldr/core";
 
 type ReadingLevel = "simple" | "gcse" | "plain";
 

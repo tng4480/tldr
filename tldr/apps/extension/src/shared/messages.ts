@@ -1,0 +1,83 @@
+export type MessageBase = {
+  type: string;
+  requestId: string;
+  tabId?: number;
+};
+
+export type SidepanelConnect = MessageBase & {
+  type: "SidepanelConnect";
+  tabId: number;
+};
+
+export type ContentConnect = MessageBase & {
+  type: "ContentConnect";
+  tabId: number;
+};
+
+export type ExtractRequest = MessageBase & {
+  type: "ExtractRequest";
+  tabId: number;
+};
+
+export type ExtractResult = MessageBase & {
+  type: "ExtractResult";
+  tabId: number;
+  text: string;
+  sentences: string[];
+  stats?: {
+    wordCount: number;
+    readability: number;
+    keywords: string[];
+    keySentences: string[];
+  };
+};
+
+export type ApplyHighlightsRequest = MessageBase & {
+  type: "ApplyHighlightsRequest";
+  tabId: number;
+  sentences: string[];
+};
+
+export type ApplyHighlightsAck = MessageBase & {
+  type: "ApplyHighlightsAck";
+  tabId: number;
+  count: number;
+};
+
+export type HighlightClicked = MessageBase & {
+  type: "HighlightClicked";
+  tabId: number;
+  sentence: string;
+  context: string;
+};
+
+export type LlmActionRequest = MessageBase & {
+  type: "LlmActionRequest";
+  tabId: number;
+  action: "simplify" | "explain";
+  text: string;
+  tone?: string;
+};
+
+export type LlmActionResult = MessageBase & {
+  type: "LlmActionResult";
+  tabId: number;
+  action: "simplify" | "explain";
+  result: string;
+  error?: string;
+};
+
+export type ExtensionMessage =
+  | SidepanelConnect
+  | ContentConnect
+  | ExtractRequest
+  | ExtractResult
+  | ApplyHighlightsRequest
+  | ApplyHighlightsAck
+  | HighlightClicked
+  | LlmActionRequest
+  | LlmActionResult;
+
+export function createRequestId(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
