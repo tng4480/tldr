@@ -1,3 +1,9 @@
+import winkNLP from "wink-nlp";
+import model from "wink-eng-lite-web-model";
+
+const nlp = winkNLP(model);
+const its = nlp.its;
+
 export function splitIntoSentences(text: string): string[] {
   const normalised = text.replace(/\s+/g, " ").trim();
   if (!normalised) {
@@ -144,6 +150,64 @@ export function detectHardSentences(sentences: string[]): boolean[] {
     const rareWords = words.filter((word) => word.length > 10).length;
     return longSentence || rareWords >= 3;
   });
+}
+
+export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
+  if (!text.trim()) {
+    return [];
+  }
+
+  const doc = nlp.readDoc(text);
+  const sentences = doc.sentences();
+  const sentenceCount = sentences.length();
+  if (sentenceCount === 0) {
+    return [];
+  }
+
+  const allWords: string[] = [];
+  const documentFrequency = new Map<string, number>();
+
+  sentences.each((sentence) => {
+    const tokens = sentence.tokens().filter((token) => token.out(its.type) === "word");
+    const normalizedWords = tokens
+      .out(its.normal)
+      .map((word) => word.toLowerCase())
+      .filter((word) => word && !STOP_WORDS.has(word));
+
+    if (!normalizedWords.length) {
+      return;
+    }
+
+    allWords.push(...normalizedWords);
+    const uniqueWords = new Set(normalizedWords);
+    uniqueWords.forEach((word) => {
+      documentFrequency.set(word, (documentFrequency.get(word) ?? 0) + 1);
+    });
+  });
+
+  if (!allWords.length) {
+    return [];
+  }
+
+  const termFrequency = new Map<string, number>();
+  allWords.forEach((word) => {
+    termFrequency.set(word, (termFrequency.get(word) ?? 0) + 1);
+  });
+
+  const totalWords = allWords.length;
+  const tfidf: Array<[string, number]> = [];
+
+  termFrequency.forEach((count, word) => {
+    const tf = count / totalWords;
+    const docFreq = documentFrequency.get(word) ?? 0;
+    const idf = Math.log((sentenceCount + 1) / (1 + docFreq)) + 1;
+    tfidf.push([word, tf * idf]);
+  });
+
+  return tfidf
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topWords)
+    .map(([word]) => word);
 }
 
 export async function computeStableHash(text: string): Promise<string> {

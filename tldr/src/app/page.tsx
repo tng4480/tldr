@@ -11,13 +11,14 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import type { SimplifyTone } from "@/lib/llm";
 import {
+  computeTfIdfHighlights,
   detectHardSentences,
   extractKeywords,
   fleschReadingEase,
   pickTopSentences,
   splitIntoSentences,
-  wordCount,
   STOP_WORDS,
+  wordCount,
 } from "@/lib/textAnalysis";
 
 type ReadingLevel = "simple" | "gcse" | "plain";
@@ -41,6 +42,10 @@ const TONE_OPTIONS: { value: SimplifyTone; label: string }[] = [
   { value: "bullets", label: "Bullet points" },
 ];
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export default function HomePage() {
   const [text, setText] = useState("");
   const [readingLevel, setReadingLevel] = useState<ReadingLevel>("simple");
@@ -53,13 +58,25 @@ export default function HomePage() {
 
   const sentences = useMemo(() => splitIntoSentences(text), [text]);
   const keywords = useMemo(() => extractKeywords(text, 8), [text]);
-  const filteredKeywords = useMemo(() => {
-    return keywords.filter((keyword) => !STOP_WORDS.has(keyword.toLowerCase()));
-  }, [keywords]);
   const hardSentences = useMemo(() => detectHardSentences(sentences), [sentences]);
   const keySentences = useMemo(() => pickTopSentences(sentences, 3), [sentences]);
   const readability = useMemo(() => fleschReadingEase(text), [text]);
   const totalWords = useMemo(() => wordCount(text), [text]);
+  const filteredKeywords = useMemo(
+    () => keywords.filter((keyword) => !STOP_WORDS.has(keyword.toLowerCase())),
+    [keywords],
+  );
+  const highlightTerms = useMemo(() => computeTfIdfHighlights(text, 14), [text]);
+  const highlightSet = useMemo(
+    () => new Set(highlightTerms.map((term) => term.toLowerCase())),
+    [highlightTerms],
+  );
+  const highlightRegex = useMemo(() => {
+    if (!highlightTerms.length) {
+      return null;
+    }
+    return new RegExp(`\\b(${highlightTerms.map(escapeRegExp).join("|")})\\b`, "gi");
+  }, [highlightTerms]);
 
   const paragraphs = useMemo(() => {
     if (!text.trim()) {
@@ -212,15 +229,30 @@ export default function HomePage() {
               <CardContent>
                 {sentences.length ? (
                   <p className="text-sm leading-relaxed text-slate-800">
-                    {sentences.map((sentence, index) => (
-                      <span key={`${sentence}-${index}`}>
-                        {hardSentences[index] ? (
-                          <mark className="rounded bg-amber-100 px-1 text-amber-900">{sentence}</mark>
-                        ) : (
-                          sentence
-                        )}{" "}
-                      </span>
-                    ))}
+                    {sentences.map((sentence, index) => {
+                      const content = highlightRegex
+                        ? sentence.split(highlightRegex).map((part, partIndex) => {
+                            if (highlightSet.has(part.toLowerCase())) {
+                              return (
+                                <span key={`${sentence}-${index}-highlight-${partIndex}`} className="rounded bg-violet-100 px-1 text-violet-900">
+                                  {part}
+                                </span>
+                              );
+                            }
+                            return part;
+                          })
+                        : sentence;
+
+                      return (
+                        <span key={`${sentence}-${index}`}>
+                          {hardSentences[index] ? (
+                            <mark className="rounded bg-amber-100 px-1 text-amber-900">{content}</mark>
+                          ) : (
+                            content
+                          )}{" "}
+                        </span>
+                      );
+                    })}
                   </p>
                 ) : (
                   <p className="text-sm text-muted-foreground">
