@@ -100,7 +100,8 @@ export const STOP_WORDS = new Set([
   "per",
   "we",
   "you",
-  "I"
+  "I",
+  "it", "be", "all", "must", "along"
 ]);
 
 export function extractKeywords(text: string, topK = 6): string[] {

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import type { SimplifyTone } from "@/lib/llm";
+import type { SimplifyTone, WholeTextMode } from "@/lib/llm";
 import {
   computeTfIdfHighlights,
   detectHardSentences,
@@ -31,6 +31,11 @@ type SimplifyState = {
   error: string | null;
 };
 
+type WholeTextState = {
+  isLoading: boolean;
+  error: string | null;
+};
+
 const READING_LEVEL_OPTIONS = [
   { value: "simple", label: "Simple" },
   { value: "gcse", label: "GCSE" },
@@ -41,6 +46,14 @@ const TONE_OPTIONS: { value: SimplifyTone; label: string }[] = [
   { value: "preserve", label: "Preserve tone" },
   { value: "descriptive", label: "Descriptive" },
   { value: "bullets", label: "Bullet points" },
+];
+
+const WHOLE_TEXT_OPTIONS: { value: WholeTextMode; label: string; description: string }[] = [
+  {
+    value: "key_info",
+    label: "Key info bullets",
+    description: "Highlights important dates, things to do, and things to know.",
+  },
 ];
 
 function escapeRegExp(value: string) {
@@ -56,6 +69,12 @@ export default function HomePage() {
     error: null,
   });
   const [tone, setTone] = useState<SimplifyTone>("preserve");
+  const [wholeTextMode, setWholeTextMode] = useState<WholeTextMode>("key_info");
+  const [wholeTextResult, setWholeTextResult] = useState("");
+  const [wholeTextState, setWholeTextState] = useState<WholeTextState>({
+    isLoading: false,
+    error: null,
+  });
 
   const sentences = useMemo(() => splitIntoSentences(text), [text]);
   const keywords = useMemo(() => extractKeywords(text, 8), [text]);
@@ -78,6 +97,15 @@ export default function HomePage() {
     }
     return new RegExp(`\\b(${highlightTerms.map(escapeRegExp).join("|")})\\b`, "gi");
   }, [highlightTerms]);
+
+  const wholeTextLines = useMemo(
+    () =>
+      wholeTextResult
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+    [wholeTextResult],
+  );
 
   const paragraphs = useMemo(() => {
     return segmentTextIntoSubsections(text);
@@ -105,6 +133,38 @@ export default function HomePage() {
     } catch (error) {
       setSimplifyState({
         loadingIndex: null,
+        error: error instanceof Error ? error.message : "Unexpected error.",
+      });
+    }
+  }
+
+  async function handleWholeText() {
+    if (!text.trim()) {
+      setWholeTextResult("");
+      setWholeTextState({ isLoading: false, error: "Paste text to run this option." });
+      return;
+    }
+    setWholeTextState({ isLoading: true, error: null });
+    try {
+      const response = await fetch("/api/whole-text", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text, mode: wholeTextMode }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error ?? "Unable to extract key information.");
+      }
+
+      const data = await response.json();
+      setWholeTextResult(data.resultText ?? "");
+      setWholeTextState({ isLoading: false, error: null });
+    } catch (error) {
+      setWholeTextState({
+        isLoading: false,
         error: error instanceof Error ? error.message : "Unexpected error.",
       });
     }
@@ -257,6 +317,78 @@ export default function HomePage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl">Whole-text LLM options</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Run a single pass over the entire text to extract key information.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div className="space-y-2">
+                  <Label>Whole-text option</Label>
+                  <Select value={wholeTextMode} onValueChange={(value) => setWholeTextMode(value as WholeTextMode)}>
+                    <SelectTrigger className="w-64">
+                      <SelectValue placeholder="Select option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {WHOLE_TEXT_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {WHOLE_TEXT_OPTIONS.find((option) => option.value === wholeTextMode)?.description}
+                  </p>
+                </div>
+                <Button onClick={handleWholeText} disabled={wholeTextState.isLoading}>
+                  {wholeTextState.isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Extracting...
+                    </span>
+                  ) : (
+                    "Extract key info"
+                  )}
+                </Button>
+              </div>
+              {wholeTextState.error ? (
+                <p className="text-sm font-medium text-red-600">{wholeTextState.error}</p>
+              ) : null}
+              {wholeTextResult ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-700">Key information</p>
+                  <div className="mt-3 space-y-2 text-sm text-slate-700">
+                    {wholeTextLines.map((line, index) => {
+                      const isHeading = /:$/.test(line) && !/^[\-•]\s*/.test(line);
+                      if (isHeading) {
+                        return (
+                          <p key={`heading-${index}`} className="pt-2 font-semibold text-slate-800">
+                            {line}
+                          </p>
+                        );
+                      }
+                      const cleaned = line.replace(/^[\-•]\s*/, "");
+                      return (
+                        <div key={`bullet-${index}`} className="flex gap-2">
+                          <span className="text-slate-400">•</span>
+                          <p className="flex-1">{cleaned}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Run the whole-text option to see key dates, action items, and other highlights.
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
