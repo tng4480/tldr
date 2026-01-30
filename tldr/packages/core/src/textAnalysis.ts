@@ -112,7 +112,7 @@ export const STOP_WORDS = new Set([
   "be",
   "all",
   "must",
-  "along","at", "out", "using"
+  "along","at", "out", "using", "us", "et", "al", "by",
 ]);
 
 export function extractKeywords(text: string, topK = 6): string[] {
@@ -220,6 +220,62 @@ export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
     .sort((a, b) => b[1] - a[1])
     .slice(0, topWords)
     .map(([word]) => word);
+}
+
+function trimPunctuation(value: string): string {
+  return value.trim().replace(/^[\s,;:()"'“”‘’]+|[\s,;:()"'“”‘’]+$/g, "");
+}
+
+export function extractDateHighlights(text: string, maxMatches = 24): string[] {
+  const normalised = text.replace(/\s+/g, " ").trim();
+  if (!normalised) {
+    return [];
+  }
+
+  const months = "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)";
+  const weekdays = "(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)";
+
+  const patterns: RegExp[] = [
+    // Friday 19 June 2026 / Tue 24 Feb
+    new RegExp(`\\b${weekdays}\\s+\\d{1,2}(?:st|nd|rd|th)?\\s+${months}(?:\\s+\\d{4})?\\b`, "gi"),
+    // 19 June 2026 / 24 February
+    new RegExp(`\\b\\d{1,2}(?:st|nd|rd|th)?\\s+${months}(?:\\s+\\d{4})?\\b`, "gi"),
+    // June 19, 2026 / Feb 24
+    new RegExp(`\\b${months}\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,?\\s+\\d{4})?\\b`, "gi"),
+    // 2026-06-19 / 06/19/2026 / 19.06.2026
+    /\b\d{1,4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,4}\b/g,
+    // 06/19 / 19-06
+    /\b\d{1,2}[\/\-]\d{1,2}\b/g,
+    // 14:00 / 2:30
+    /\b\d{1,2}:\d{2}\b/g,
+    // 14.00 (common in some locales)
+    /\b\d{1,2}\.\d{2}\b/g,
+  ];
+
+  const results: string[] = [];
+  const seen = new Set<string>();
+
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    const regex = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+    while ((match = regex.exec(normalised))) {
+      const candidate = trimPunctuation(match[0] ?? "");
+      if (!candidate) {
+        continue;
+      }
+      const key = candidate.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      results.push(candidate);
+      if (results.length >= maxMatches) {
+        return results;
+      }
+    }
+  }
+
+  return results;
 }
 
 type SentenceVector = Map<string, number>;

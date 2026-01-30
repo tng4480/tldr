@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { computeStableHash } from "@tldr/core";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateEntitlements } from "@/lib/entitlements";
-import { simplifyWithLlm, SimplifyLevel, SimplifyTone } from "@/lib/llm";
+import { simplifyWithLlm, simplifyWithLlmStream, SimplifyLevel, SimplifyTone } from "@/lib/llm";
 
 export const runtime = "nodejs";
 
@@ -23,6 +23,7 @@ export async function POST(request: Request) {
   const text = typeof body?.text === "string" ? body.text.trim() : "";
   const readingLevel = body?.readingLevel as SimplifyLevel;
   const tone = (body?.tone as SimplifyTone) ?? "preserve";
+  const stream = body?.stream === true;
 
   if (!text || !ALLOWED_LEVELS.includes(readingLevel) || !ALLOWED_TONES.includes(tone)) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
@@ -37,6 +38,21 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (cached?.simplified_text) {
+    if (stream) {
+      const encoder = new TextEncoder();
+      const readable = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(`${JSON.stringify({ type: "final", simplifiedText: cached.simplified_text, cached: true })}\n`));
+          controller.close();
+        },
+      });
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-store",
+        },
+      });
+    }
     return NextResponse.json({ simplifiedText: cached.simplified_text, cached: true });
   }
 
@@ -71,6 +87,64 @@ export async function POST(request: Request) {
 
   if (monthlyUsage >= entitlements.monthlyLimit) {
     return NextResponse.json({ error: "Monthly limit reached." }, { status: 402 });
+  }
+
+  if (stream) {
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream<Uint8Array>({
+      start(controller) {
+        void (async () => {
+          try {
+            const llmResult = await simplifyWithLlmStream(text, readingLevel, tone, (deltaText) => {
+              controller.enqueue(encoder.encode(`${JSON.stringify({ type: "delta", text: deltaText })}\n`));
+            });
+
+            await supabaseAdmin.from("cached_simplifications").insert({
+              content_hash: contentHash,
+              reading_level: readingLevel,
+              simplified_text: llmResult.simplifiedText,
+              model: llmResult.model ?? null,
+            });
+
+            await supabaseAdmin.from("usage_events").insert({
+              user_id: userId,
+              event_type: "simplify",
+              model: llmResult.model ?? null,
+              input_tokens: llmResult.inputTokens ?? null,
+              output_tokens: llmResult.outputTokens ?? null,
+              total_tokens: llmResult.totalTokens ?? null,
+            });
+
+            await supabaseAdmin
+              .from("user_profiles")
+              .update({ monthly_usage: monthlyUsage + 1, monthly_usage_period: entitlements.usagePeriod })
+              .eq("id", userId);
+
+            controller.enqueue(
+              encoder.encode(`${JSON.stringify({ type: "final", simplifiedText: llmResult.simplifiedText, cached: false })}\n`),
+            );
+            controller.close();
+          } catch (error) {
+            controller.enqueue(
+              encoder.encode(
+                `${JSON.stringify({
+                  type: "error",
+                  error: error instanceof Error ? error.message : "Unable to simplify this paragraph.",
+                })}\n`,
+              ),
+            );
+            controller.close();
+          }
+        })();
+      },
+    });
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
   }
 
   const llmResult = await simplifyWithLlm(text, readingLevel, tone);

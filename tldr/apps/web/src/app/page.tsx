@@ -119,6 +119,26 @@ export default function HomePage() {
     [wholeTextResult],
   );
 
+  const wholeTextPayload = useMemo(() => {
+    try {
+      const parsed = JSON.parse(wholeTextResult) as { sections?: unknown; events?: unknown };
+      if (!parsed || typeof parsed !== "object") {
+        return null;
+      }
+      const sections = (parsed as any).sections;
+      if (!sections || typeof sections !== "object") {
+        return null;
+      }
+      const events = Array.isArray((parsed as any).events) ? ((parsed as any).events as any[]) : [];
+      return {
+        sections: sections as Record<string, string[]>,
+        events,
+      };
+    } catch {
+      return null;
+    }
+  }, [wholeTextResult]);
+
   const paragraphs = useMemo(() => {
     return segmentTextIntoSubsections(text);
   }, [text]);
@@ -131,12 +151,53 @@ export default function HomePage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text: paragraph, readingLevel, tone }),
+        body: JSON.stringify({ text: paragraph, readingLevel, tone, stream: true }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error ?? "Unable to simplify this paragraph.");
+      }
+
+      const isNdjson = response.headers.get("content-type")?.includes("application/x-ndjson");
+      if (isNdjson && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let simplifiedText = "";
+
+        setSimplifiedMap((prev) => ({ ...prev, [index]: "" }));
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) {
+              continue;
+            }
+            const event = JSON.parse(trimmed) as any;
+            if (event.type === "delta" && typeof event.text === "string") {
+              simplifiedText += event.text;
+              setSimplifiedMap((prev) => ({ ...prev, [index]: simplifiedText }));
+            }
+            if (event.type === "final" && typeof event.simplifiedText === "string") {
+              simplifiedText = event.simplifiedText;
+              setSimplifiedMap((prev) => ({ ...prev, [index]: simplifiedText }));
+            }
+            if (event.type === "error") {
+              throw new Error(event.error ?? "Unable to simplify this paragraph.");
+            }
+          }
+        }
+
+        setSimplifyState({ loadingIndex: null, error: null });
+        return;
       }
 
       const data = await response.json();
@@ -157,18 +218,58 @@ export default function HomePage() {
       return;
     }
     setWholeTextState({ isLoading: true, error: null });
+    setWholeTextResult("");
     try {
       const response = await fetch("/api/whole-text", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text, mode: wholeTextMode }),
+        body: JSON.stringify({ text, mode: wholeTextMode, stream: true }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error ?? "Unable to extract key information.");
+      }
+
+      const isNdjson = response.headers.get("content-type")?.includes("application/x-ndjson");
+      if (isNdjson && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let resultText = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) {
+              continue;
+            }
+            const event = JSON.parse(trimmed) as any;
+            if (event.type === "delta" && typeof event.text === "string") {
+              resultText += event.text;
+              setWholeTextResult(resultText);
+            }
+            if (event.type === "final" && typeof event.resultText === "string") {
+              resultText = event.resultText;
+              setWholeTextResult(resultText);
+            }
+            if (event.type === "error") {
+              throw new Error(event.error ?? "Unable to extract key information.");
+            }
+          }
+        }
+
+        setWholeTextState({ isLoading: false, error: null });
+        return;
       }
 
       const data = await response.json();
@@ -374,8 +475,47 @@ export default function HomePage() {
               {wholeTextResult ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-semibold text-slate-700">Key information</p>
-                  <div className="mt-3 space-y-2 text-sm text-slate-700">
-                    {wholeTextLines.map((line, index) => {
+                  {wholeTextPayload ? (
+                    <div className="mt-3 space-y-4 text-sm text-slate-700">
+                      {["Important dates", "Things to do", "Things to know"].map((heading) => {
+                        const items = Array.isArray((wholeTextPayload.sections as any)[heading])
+                          ? ((wholeTextPayload.sections as any)[heading] as string[])
+                          : [];
+                        return (
+                          <div key={heading} className="space-y-2">
+                            <p className="pt-2 font-semibold text-slate-800">{heading}</p>
+                            <ul className="list-disc space-y-1 pl-5">
+                              {(items.length ? items : ["None"]).map((item, index) => (
+                                <li key={`${heading}-${index}`} className="whitespace-pre-wrap">
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })}
+
+                      {wholeTextPayload.events?.some((event) => typeof event?.calendarUrl === "string" && event.calendarUrl.length > 0) ? (
+                        <div className="space-y-2">
+                          <p className="pt-2 font-semibold text-slate-800">Add to calendar</p>
+                          <ul className="list-disc space-y-1 pl-5">
+                            {wholeTextPayload.events
+                              .filter((event) => typeof event?.calendarUrl === "string" && event.calendarUrl.length > 0)
+                              .map((event, index) => (
+                                <li key={`${event.title ?? "event"}-${index}`}>
+                                  <a className="text-sky-700 underline" href={event.calendarUrl as string} target="_blank" rel="noreferrer">
+                                    {event.title ?? "Open in Google Calendar"}
+                                  </a>
+                                </li>
+                              ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {!wholeTextPayload ? (
+                    <div className="mt-3 space-y-2 text-sm text-slate-700">
+                      {wholeTextLines.map((line, index) => {
                       const isHeading = /:$/.test(line) && !/^[\-•]\s*/.test(line);
                       if (isHeading) {
                         return (
@@ -392,7 +532,8 @@ export default function HomePage() {
                         </div>
                       );
                     })}
-                  </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">

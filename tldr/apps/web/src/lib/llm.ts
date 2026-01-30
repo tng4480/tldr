@@ -15,6 +15,20 @@ type LlmResult = {
 const SYSTEM_INSTRUCTION =
   "You are a careful editor. Preserve meaning, simplify language to the requested level, avoid adding facts, and keep edits minimal.";
 
+function createAnthropicClient() {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("LLM configuration is missing.");
+  }
+
+  const options: ConstructorParameters<typeof Anthropic>[0] = { apiKey };
+  if (process.env.LLM_BASE_URL) {
+    (options as any).baseURL = process.env.LLM_BASE_URL;
+  }
+  return new Anthropic(options);
+}
+
 const TONE_PROMPTS: Record<SimplifyTone, string> = {
   preserve: "Keep the tone and voice as close to the original paragraph as possible.",
   descriptive:
@@ -26,11 +40,13 @@ export const runtime = "nodejs";
 
 const WHOLE_TEXT_PROMPTS: Record<WholeTextMode, string> = {
   key_info:
-    "Extract the key information from the full text. Return bullet points grouped under short headings. " +
-    "Always include these headings in this order: Important dates, Things to do, Things to know. " +
-    "Under each heading, list concise bullet points (start with a dash). " +
-    "If a section has no items, include a single bullet that says \"None\". " +
-    "Do not add facts or assumptions.",
+    "Extract the key information from the full text. " +
+    "Return STRICT JSON with this shape: " +
+    "{sections: {\"Important dates\": string[], \"Things to do\": string[], \"Things to know\": string[]}, events: Array<{title: string, start?: string|null, end?: string|null, timezone?: string|null, location?: string|null, details?: string|null}>}. " +
+    "Rules: always include all 3 section keys in that order; if a section has no items, use [\"None\"]. " +
+    "For events: include only when the text clearly describes something calendar-worthy (meeting, deadline, appointment, session, exam, submission, travel, etc). " +
+    "Use RFC3339 for start/end when time is known (include timezone offset if known); use YYYY-MM-DD for all-day; otherwise use null. " +
+    "Do not add facts or assumptions. Do not include markdown. Do not include any extra keys. Return JSON only.",
 };
 
 export async function simplifyWithLlm(
@@ -40,15 +56,12 @@ export async function simplifyWithLlm(
 ): Promise<LlmResult> {
   const model = process.env.ANTHROPIC_MODEL;
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const baseUrl = process.env.LLM_BASE_URL ?? "https://api.anthropic.com/v1";
 
   if (!apiKey || !model) {
     throw new Error("LLM configuration is missing.");
   }
 
-  const client = new Anthropic({
-    apiKey,
-  });
+  const client = createAnthropicClient();
 
   const prompt = `${TONE_PROMPTS[tone]}\n\nSimplify the following paragraph to ${level} reading level. Return only the simplified paragraph.`;
 
@@ -83,6 +96,60 @@ export async function simplifyWithLlm(
   };
 }
 
+export async function simplifyWithLlmStream(
+  text: string,
+  level: SimplifyLevel,
+  tone: SimplifyTone,
+  onDelta: (text: string) => void,
+): Promise<LlmResult> {
+  const model = process.env.ANTHROPIC_MODEL;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!apiKey || !model) {
+    throw new Error("LLM configuration is missing.");
+  }
+
+  const prompt = `${TONE_PROMPTS[tone]}\n\nSimplify the following paragraph to ${level} reading level. Return only the simplified paragraph.`;
+
+  const client = createAnthropicClient();
+  const stream = client.messages
+    .stream({
+      model,
+      temperature: 0.2,
+      max_tokens: 1024,
+      system: SYSTEM_INSTRUCTION,
+      messages: [
+        {
+          role: "user",
+          content: `${prompt}\n\n${text}`,
+        },
+      ],
+    } as any)
+    .on("text", (deltaText: string) => {
+      if (typeof deltaText === "string" && deltaText.length > 0) {
+        onDelta(deltaText);
+      }
+    });
+
+  const finalMessage = await stream.finalMessage();
+  const simplifiedText = finalMessage.content
+    ?.filter((block: any) => block.type === "text")
+    .map((block: any) => ("text" in block ? block.text : ""))
+    .join("")
+    .trim();
+
+  return {
+    simplifiedText: simplifiedText ?? "",
+    model: finalMessage.model ?? model,
+    inputTokens: finalMessage.usage?.input_tokens ?? null,
+    outputTokens: finalMessage.usage?.output_tokens ?? null,
+    totalTokens:
+      finalMessage.usage?.input_tokens !== undefined && finalMessage.usage?.output_tokens !== undefined
+        ? finalMessage.usage.input_tokens + finalMessage.usage.output_tokens
+        : null,
+  };
+}
+
 export async function extractKeyInfoWithLlm(text: string, mode: WholeTextMode): Promise<LlmResult> {
   const model = process.env.ANTHROPIC_MODEL;
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -91,11 +158,9 @@ export async function extractKeyInfoWithLlm(text: string, mode: WholeTextMode): 
     throw new Error("LLM configuration is missing.");
   }
 
-  const client = new Anthropic({
-    apiKey,
-  });
+  const client = createAnthropicClient();
 
-  const prompt = `${WHOLE_TEXT_PROMPTS[mode]}\n\nReturn only the bullet list.`;
+  const prompt = WHOLE_TEXT_PROMPTS[mode];
 
   const response = await client.messages.create({
     model,
@@ -124,6 +189,59 @@ export async function extractKeyInfoWithLlm(text: string, mode: WholeTextMode): 
     totalTokens:
       response.usage?.input_tokens !== undefined && response.usage?.output_tokens !== undefined
         ? response.usage.input_tokens + response.usage.output_tokens
+        : null,
+  };
+}
+
+export async function extractKeyInfoWithLlmStream(
+  text: string,
+  mode: WholeTextMode,
+  onDelta: (text: string) => void,
+): Promise<LlmResult> {
+  const model = process.env.ANTHROPIC_MODEL;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!apiKey || !model) {
+    throw new Error("LLM configuration is missing.");
+  }
+
+  const prompt = WHOLE_TEXT_PROMPTS[mode];
+
+  const client = createAnthropicClient();
+  const stream = client.messages
+    .stream({
+      model,
+      temperature: 0.2,
+      max_tokens: 1024,
+      system: SYSTEM_INSTRUCTION,
+      messages: [
+        {
+          role: "user",
+          content: `${prompt}\n\n${text}`,
+        },
+      ],
+    } as any)
+    .on("text", (deltaText: string) => {
+      if (typeof deltaText === "string" && deltaText.length > 0) {
+        onDelta(deltaText);
+      }
+    });
+
+  const finalMessage = await stream.finalMessage();
+  const simplifiedText = finalMessage.content
+    ?.filter((block: any) => block.type === "text")
+    .map((block: any) => ("text" in block ? block.text : ""))
+    .join("")
+    .trim();
+
+  return {
+    simplifiedText: simplifiedText ?? "",
+    model: finalMessage.model ?? model,
+    inputTokens: finalMessage.usage?.input_tokens ?? null,
+    outputTokens: finalMessage.usage?.output_tokens ?? null,
+    totalTokens:
+      finalMessage.usage?.input_tokens !== undefined && finalMessage.usage?.output_tokens !== undefined
+        ? finalMessage.usage.input_tokens + finalMessage.usage.output_tokens
         : null,
   };
 }

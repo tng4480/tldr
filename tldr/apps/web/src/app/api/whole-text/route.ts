@@ -4,11 +4,29 @@ import { authOptions } from "@/lib/auth";
 import { computeStableHash } from "@tldr/core";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateEntitlements } from "@/lib/entitlements";
-import { extractKeyInfoWithLlm, WholeTextMode } from "@/lib/llm";
+import { extractKeyInfoWithLlm, extractKeyInfoWithLlmStream, WholeTextMode } from "@/lib/llm";
+import { buildGoogleCalendarTemplateUrl, type GoogleCalendarTemplateEvent } from "@/lib/googleCalendar";
 
 export const runtime = "nodejs";
 
 const ALLOWED_MODES: WholeTextMode[] = ["key_info"];
+
+function augmentCalendarLinks(resultText: string): string {
+  try {
+    const parsed = JSON.parse(resultText) as { events?: unknown };
+    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as any).events)) {
+      return resultText;
+    }
+    const events = (parsed as any).events as GoogleCalendarTemplateEvent[];
+    (parsed as any).events = events.map((event) => ({
+      ...event,
+      calendarUrl: buildGoogleCalendarTemplateUrl(event),
+    }));
+    return JSON.stringify(parsed);
+  } catch {
+    return resultText;
+  }
+}
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -21,6 +39,7 @@ export async function POST(request: Request) {
   const body = await request.json();
   const text = typeof body?.text === "string" ? body.text.trim() : "";
   const mode = (body?.mode as WholeTextMode) ?? "key_info";
+  const stream = body?.stream === true;
 
   if (!text || !ALLOWED_MODES.includes(mode)) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
@@ -35,7 +54,23 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (cached?.simplified_text) {
-    return NextResponse.json({ resultText: cached.simplified_text, cached: true });
+    const cachedResultText = augmentCalendarLinks(cached.simplified_text);
+    if (stream) {
+      const encoder = new TextEncoder();
+      const readable = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(`${JSON.stringify({ type: "final", resultText: cachedResultText, cached: true })}\n`));
+          controller.close();
+        },
+      });
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+    return NextResponse.json({ resultText: cachedResultText, cached: true });
   }
 
   const { data: profile, error: profileError } = await supabaseAdmin
@@ -71,12 +106,70 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Monthly limit reached." }, { status: 402 });
   }
 
+  if (stream) {
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream<Uint8Array>({
+      start(controller) {
+        void (async () => {
+          try {
+            const llmResult = await extractKeyInfoWithLlmStream(text, mode, (deltaText) => {
+              controller.enqueue(encoder.encode(`${JSON.stringify({ type: "delta", text: deltaText })}\n`));
+            });
+            const resultText = augmentCalendarLinks(llmResult.simplifiedText);
+
+            await supabaseAdmin.from("cached_simplifications").insert({
+              content_hash: contentHash,
+              reading_level: "plain",
+              simplified_text: resultText,
+              model: llmResult.model ?? null,
+            });
+
+            await supabaseAdmin.from("usage_events").insert({
+              user_id: userId,
+              event_type: "simplify",
+              model: llmResult.model ?? null,
+              input_tokens: llmResult.inputTokens ?? null,
+              output_tokens: llmResult.outputTokens ?? null,
+              total_tokens: llmResult.totalTokens ?? null,
+            });
+
+            await supabaseAdmin
+              .from("user_profiles")
+              .update({ monthly_usage: monthlyUsage + 1, monthly_usage_period: entitlements.usagePeriod })
+              .eq("id", userId);
+
+            controller.enqueue(encoder.encode(`${JSON.stringify({ type: "final", resultText, cached: false })}\n`));
+            controller.close();
+          } catch (error) {
+            controller.enqueue(
+              encoder.encode(
+                `${JSON.stringify({
+                  type: "error",
+                  error: error instanceof Error ? error.message : "Unable to extract key information.",
+                })}\n`,
+              ),
+            );
+            controller.close();
+          }
+        })();
+      },
+    });
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
   const llmResult = await extractKeyInfoWithLlm(text, mode);
+  const resultText = augmentCalendarLinks(llmResult.simplifiedText);
 
   await supabaseAdmin.from("cached_simplifications").insert({
     content_hash: contentHash,
     reading_level: "plain",
-    simplified_text: llmResult.simplifiedText,
+    simplified_text: resultText,
     model: llmResult.model ?? null,
   });
 
@@ -94,5 +187,5 @@ export async function POST(request: Request) {
     .update({ monthly_usage: monthlyUsage + 1, monthly_usage_period: entitlements.usagePeriod })
     .eq("id", userId);
 
-  return NextResponse.json({ resultText: llmResult.simplifiedText, cached: false });
+  return NextResponse.json({ resultText, cached: false });
 }
