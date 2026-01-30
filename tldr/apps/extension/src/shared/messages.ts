@@ -41,7 +41,8 @@ export type ExtractResult = MessageBase & {
 export type ApplyHighlightsRequest = MessageBase & {
   type: "ApplyHighlightsRequest";
   tabId: number;
-  sentences: string[];
+  highlights: string[];
+  highlightType: "sentences" | "keywords";
 };
 
 export type ApplyHighlightsAck = MessageBase & {
@@ -61,7 +62,7 @@ export type HighlightClicked = MessageBase & {
 export type LlmActionRequest = MessageBase & {
   type: "LlmActionRequest";
   tabId: number;
-  action: "simplify" | "explain";
+  action: "simplify" | "explain" | "key_info";
   text: string;
   tone?: string;
 };
@@ -69,7 +70,7 @@ export type LlmActionRequest = MessageBase & {
 export type LlmActionResult = MessageBase & {
   type: "LlmActionResult";
   tabId: number;
-  action: "simplify" | "explain";
+  action: "simplify" | "explain" | "key_info";
   result: string;
   error?: string;
 };
