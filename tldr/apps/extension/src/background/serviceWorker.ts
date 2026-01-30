@@ -60,11 +60,16 @@ async function injectContentScript(tabId: number): Promise<boolean> {
 
 async function callLlm(request: LlmActionRequest): Promise<LlmActionResult> {
   const apiBase = getApiBase();
-  const url = request.action === "simplify" ? `${apiBase}/api/simplify` : `${apiBase}/api/simplify`;
+  const url =
+    request.action === "key_info"
+      ? `${apiBase}/api/whole-text`
+      : `${apiBase}/api/simplify`;
   const body =
-    request.action === "simplify"
-      ? { text: request.text, readingLevel: "plain", tone: "preserve" }
-      : { text: request.text, readingLevel: "plain", tone: "descriptive" };
+    request.action === "key_info"
+      ? { text: request.text, mode: "key_info" }
+      : request.action === "simplify"
+        ? { text: request.text, readingLevel: "plain", tone: "preserve" }
+        : { text: request.text, readingLevel: "plain", tone: "descriptive" };
 
   try {
     log("bg", "LLM request start", { tabId: request.tabId, action: request.action, url, bytes: request.text.length });
@@ -311,7 +316,8 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     log("bg", "ApplyHighlightsRequest", {
       tabId: resolvedTabId,
       requestId: request.requestId,
-      sentences: request.sentences?.length ?? 0,
+      highlights: request.highlights?.length ?? 0,
+      type: request.highlightType,
     });
 
     const normalized = { ...request, tabId: resolvedTabId };

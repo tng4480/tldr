@@ -94,25 +94,16 @@ function clearHighlights() {
   }
 }
 
-function applyHighlights(sentences: string[]): number {
-  clearHighlights();
-  if (!sentences.length) {
-    return 0;
-  }
-  ensureHighlightStyles();
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
-  const root = getReadableRoot(document);
-  const { text, nodes } = extractReadableText(root);
-  currentNodes = nodes;
-
-  const sentenceList = sentences.filter(Boolean);
+function buildSentenceRanges(text: string, nodes: TextNodeInfo[], sentences: string[]) {
   const ranges: Range[] = [];
   highlightEntries = [];
 
-  log("cs", "applyHighlights start", { requested: sentenceList.length, textLen: text.length, nodes: nodes.length });
-
   let searchStart = 0;
-  for (const sentence of sentenceList) {
+  for (const sentence of sentences) {
     const normalizedSentence = sentence.trim();
     if (!normalizedSentence) {
       continue;
@@ -131,6 +122,61 @@ function applyHighlights(sentences: string[]): number {
     highlightEntries.push({ sentence: normalizedSentence, range, start, end });
     searchStart = end;
   }
+
+  return ranges;
+}
+
+function buildKeywordRanges(text: string, nodes: TextNodeInfo[], terms: string[]) {
+  const ranges: Range[] = [];
+  highlightEntries = [];
+
+  const uniqueTerms = Array.from(
+    new Set(terms.map((term) => term.trim()).filter(Boolean).map((term) => term.toLowerCase())),
+  );
+  if (!uniqueTerms.length) {
+    return ranges;
+  }
+
+  const regex = new RegExp(`\\b(${uniqueTerms.map(escapeRegExp).join("|")})\\b`, "gi");
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text))) {
+    const matched = match[0];
+    const start = match.index;
+    const end = match.index + matched.length;
+    const range = offsetsToRange(nodes, start, end);
+    if (!range) {
+      continue;
+    }
+    ranges.push(range);
+    highlightEntries.push({ sentence: matched, range, start, end });
+  }
+
+  return ranges;
+}
+
+function applyHighlights(highlights: string[], highlightType: ApplyHighlightsRequest["highlightType"]): number {
+  clearHighlights();
+  if (!highlights.length) {
+    return 0;
+  }
+  ensureHighlightStyles();
+
+  const root = getReadableRoot(document);
+  const { text, nodes } = extractReadableText(root);
+  currentNodes = nodes;
+
+  const requested = highlights.filter(Boolean);
+  log("cs", "applyHighlights start", {
+    requested: requested.length,
+    type: highlightType,
+    textLen: text.length,
+    nodes: nodes.length,
+  });
+
+  const ranges =
+    highlightType === "keywords"
+      ? buildKeywordRanges(text, nodes, requested)
+      : buildSentenceRanges(text, nodes, requested);
 
   if ("highlights" in CSS) {
     log("cs", "applyHighlights using CSS Custom Highlight API", { ranges: ranges.length });
@@ -273,8 +319,12 @@ function handleMessage(message: ExtractRequest | ApplyHighlightsRequest) {
   }
 
   if (message.type === "ApplyHighlightsRequest") {
-    log("cs", "ApplyHighlightsRequest", { requestId: message.requestId, sentences: message.sentences?.length ?? 0 });
-    const count = applyHighlights(message.sentences);
+    log("cs", "ApplyHighlightsRequest", {
+      requestId: message.requestId,
+      highlights: message.highlights?.length ?? 0,
+      type: message.highlightType,
+    });
+    const count = applyHighlights(message.highlights, message.highlightType);
     chrome.runtime.sendMessage(
       {
         type: "ApplyHighlightsAck",
