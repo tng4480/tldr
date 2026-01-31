@@ -112,7 +112,7 @@ export const STOP_WORDS = new Set([
   "be",
   "all",
   "must",
-  "along","at", "out", "using"
+  "along","at", "out", "using", "if", "add"
 ]);
 
 export function extractKeywords(text: string, topK = 6): string[] {
