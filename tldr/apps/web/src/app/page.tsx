@@ -9,10 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { buildGoogleCalendarTemplateUrl } from "@/lib/googleCalendar";
 import type { SimplifyTone, WholeTextMode } from "@/lib/llm";
 import {
   computeTfIdfHighlights,
   detectHardSentences,
+  extractDateHighlights,
   extractKeywords,
   fleschReadingEase,
   pickTopSentences,
@@ -34,6 +36,19 @@ type SimplifyState = {
 type WholeTextState = {
   isLoading: boolean;
   error: string | null;
+};
+
+type KeyInfoPayload = {
+  sections: Record<string, string[]>;
+  events: Array<{
+    title: string;
+    start?: string | null;
+    end?: string | null;
+    timezone?: string | null;
+    location?: string | null;
+    details?: string | null;
+    calendarUrl?: string | null;
+  }>;
 };
 
 const READING_LEVEL_OPTIONS = [
@@ -58,6 +73,67 @@ const WHOLE_TEXT_OPTIONS: { value: WholeTextMode; label: string; description: st
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const KEY_INFO_HEADINGS = ["Important dates", "Things to do", "Things to know"] as const;
+
+function stripJsonFence(value: string): string {
+  const trimmed = value.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fencedMatch) {
+    return fencedMatch[1].trim();
+  }
+  return trimmed;
+}
+
+function parseKeyInfoPayload(rawText: string): KeyInfoPayload | null {
+  try {
+    const cleaned = stripJsonFence(rawText);
+    if (!cleaned) {
+      return null;
+    }
+    const parsed = JSON.parse(cleaned) as { sections?: unknown; events?: unknown };
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const sections = (parsed as any).sections;
+    if (!sections || typeof sections !== "object") {
+      return null;
+    }
+    const normalizedSections: Record<string, string[]> = {};
+    KEY_INFO_HEADINGS.forEach((heading) => {
+      const items = Array.isArray((sections as any)[heading]) ? ((sections as any)[heading] as unknown[]) : [];
+      normalizedSections[heading] = items
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    });
+    const events = Array.isArray((parsed as any).events) ? ((parsed as any).events as unknown[]) : [];
+    const normalizedEvents = events
+      .filter((event): event is Record<string, unknown> => !!event && typeof event === "object")
+      .map((event) => {
+        const title = typeof event.title === "string" ? event.title.trim() : "";
+        if (!title) {
+          return null;
+        }
+        return {
+          title,
+          start: typeof event.start === "string" ? event.start.trim() : null,
+          end: typeof event.end === "string" ? event.end.trim() : null,
+          timezone: typeof event.timezone === "string" ? event.timezone.trim() : null,
+          location: typeof event.location === "string" ? event.location.trim() : null,
+          details: typeof event.details === "string" ? event.details.trim() : null,
+          calendarUrl: typeof event.calendarUrl === "string" ? event.calendarUrl : null,
+        };
+      })
+      .filter((event): event is NonNullable<typeof event> => !!event);
+    return {
+      sections: normalizedSections,
+      events: normalizedEvents,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export default function HomePage() {
@@ -99,16 +175,25 @@ export default function HomePage() {
     [keywords],
   );
   const highlightTerms = useMemo(() => computeTfIdfHighlights(text, 14), [text]);
+  const dateTerms = useMemo(() => extractDateHighlights(text, 12), [text]);
   const highlightSet = useMemo(
     () => new Set(highlightTerms.map((term) => term.toLowerCase())),
     [highlightTerms],
   );
+  const dateSet = useMemo(() => new Set(dateTerms.map((term) => term.toLowerCase())), [dateTerms]);
   const highlightRegex = useMemo(() => {
-    if (!highlightTerms.length) {
+    const allTerms = [...highlightTerms, ...dateTerms]
+      .map((term) => term.trim())
+      .filter(Boolean);
+    if (!allTerms.length) {
       return null;
     }
-    return new RegExp(`\\b(${highlightTerms.map(escapeRegExp).join("|")})\\b`, "gi");
-  }, [highlightTerms]);
+    const deduped = Array.from(new Set(allTerms));
+    deduped.sort((a, b) => b.length - a.length);
+    return new RegExp(`(${deduped.map(escapeRegExp).join("|")})`, "gi");
+  }, [highlightTerms, dateTerms]);
+
+  const keyInfoPayload = useMemo(() => parseKeyInfoPayload(wholeTextResult), [wholeTextResult]);
 
   const wholeTextLines = useMemo(
     () =>
@@ -299,9 +384,23 @@ export default function HomePage() {
                     {sentences.map((sentence, index) => {
                       const content = highlightRegex
                         ? sentence.split(highlightRegex).map((part, partIndex) => {
-                            if (highlightSet.has(part.toLowerCase())) {
+                            const normalized = part.toLowerCase();
+                            if (dateSet.has(normalized)) {
                               return (
-                                <span key={`${sentence}-${index}-highlight-${partIndex}`} className="rounded bg-violet-100 px-1 text-violet-900">
+                                <span
+                                  key={`${sentence}-${index}-date-${partIndex}`}
+                                  className="rounded bg-emerald-100 px-1 text-emerald-900"
+                                >
+                                  {part}
+                                </span>
+                              );
+                            }
+                            if (highlightSet.has(normalized)) {
+                              return (
+                                <span
+                                  key={`${sentence}-${index}-highlight-${partIndex}`}
+                                  className="rounded bg-violet-100 px-1 text-violet-900"
+                                >
                                   {part}
                                 </span>
                               );
@@ -375,24 +474,66 @@ export default function HomePage() {
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-semibold text-slate-700">Key information</p>
                   <div className="mt-3 space-y-2 text-sm text-slate-700">
-                    {wholeTextLines.map((line, index) => {
-                      const isHeading = /:$/.test(line) && !/^[\-•]\s*/.test(line);
-                      if (isHeading) {
-                        return (
-                          <p key={`heading-${index}`} className="pt-2 font-semibold text-slate-800">
-                            {line}
-                          </p>
-                        );
-                      }
-                      const cleaned = line.replace(/^[\-•]\s*/, "");
-                      return (
-                        <div key={`bullet-${index}`} className="flex gap-2">
-                          <span className="text-slate-400">•</span>
-                          <p className="flex-1">{cleaned}</p>
-                        </div>
-                      );
-                    })}
+                    {keyInfoPayload
+                      ? KEY_INFO_HEADINGS.map((heading) => {
+                          const items = keyInfoPayload.sections[heading] ?? [];
+                          return (
+                            <div key={heading}>
+                              <p className="pt-2 font-semibold text-slate-800">{heading}</p>
+                              <ul className="mt-2 space-y-1 pl-4">
+                                {(items.length ? items : ["None"]).map((item, itemIndex) => (
+                                  <li key={`${heading}-${itemIndex}`} className="text-slate-700">
+                                    {item}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          );
+                        })
+                      : wholeTextLines.map((line, index) => {
+                          const isHeading = /:$/.test(line) && !/^[\-•]\s*/.test(line);
+                          if (isHeading) {
+                            return (
+                              <p key={`heading-${index}`} className="pt-2 font-semibold text-slate-800">
+                                {line}
+                              </p>
+                            );
+                          }
+                          const cleaned = line.replace(/^[\-•]\s*/, "");
+                          return (
+                            <div key={`bullet-${index}`} className="flex gap-2">
+                              <span className="text-slate-400">•</span>
+                              <p className="flex-1">{cleaned}</p>
+                            </div>
+                          );
+                        })}
                   </div>
+                  {keyInfoPayload?.events?.length ? (
+                    <div className="mt-4 border-t border-slate-200 pt-3">
+                      <p className="text-sm font-semibold text-slate-700">Add to Google Calendar</p>
+                      <ul className="mt-2 space-y-1 pl-4 text-sm">
+                        {keyInfoPayload.events.map((event, index) => {
+                          const calendarUrl =
+                            event.calendarUrl ??
+                            buildGoogleCalendarTemplateUrl({
+                              title: event.title,
+                              start: event.start ?? null,
+                              end: event.end ?? null,
+                              timezone: event.timezone ?? null,
+                              location: event.location ?? null,
+                              details: event.details ?? null,
+                            });
+                          return (
+                            <li key={`${event.title}-${index}`}>
+                              <a className="text-sky-600 hover:underline" href={calendarUrl} target="_blank" rel="noreferrer">
+                                {event.title}
+                              </a>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">

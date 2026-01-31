@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { computeTfIdfHighlights } from "@tldr/core";
+import { computeTfIdfHighlights, extractDateHighlights } from "@tldr/core";
 import type { ApplyHighlightsAck, ExtractResult, LlmActionResult } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
@@ -40,7 +40,7 @@ function App() {
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
 
   const highlightTerms = useMemo(() => computeTfIdfHighlights(pageText, 14), [pageText]);
-   const dateTerms = useMemo(() => extractDateHighlights(pageText, 24), [pageText]);
+  const dateTerms = useMemo(() => extractDateHighlights(pageText, 24), [pageText]);
 
   const keyInfoPayload = useMemo(() => {
     try {

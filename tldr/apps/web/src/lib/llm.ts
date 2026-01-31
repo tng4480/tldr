@@ -26,11 +26,13 @@ export const runtime = "nodejs";
 
 const WHOLE_TEXT_PROMPTS: Record<WholeTextMode, string> = {
   key_info:
-    "Extract the key information from the full text. Return bullet points grouped under short headings. " +
-    "Always include these headings in this order: Important dates, Things to do, Things to know. " +
-    "Under each heading, list concise bullet points (start with a dash). " +
-    "If a section has no items, include a single bullet that says \"None\". " +
-    "Do not add facts or assumptions.",
+    "Extract the key information from the full text. Return a JSON object with the following shape: " +
+    "{ \"sections\": { \"Important dates\": string[], \"Things to do\": string[], \"Things to know\": string[] }, " +
+    "\"events\": [{ \"title\": string, \"start\": string|null, \"end\": string|null, \"timezone\": string|null, \"location\": string|null, \"details\": string|null }] }. " +
+    "Always include the three section headings in this order. Use \"None\" as the only entry when a section has no items. " +
+    "Dates should be ISO 8601 (YYYY-MM-DD for all-day; include time with timezone offset when present). " +
+    "Include an event object only when the text specifies a real date or time. " +
+    "Return only valid JSON without markdown or commentary. Do not add facts or assumptions.",
 };
 
 export async function simplifyWithLlm(
@@ -95,7 +97,7 @@ export async function extractKeyInfoWithLlm(text: string, mode: WholeTextMode): 
     apiKey,
   });
 
-  const prompt = `${WHOLE_TEXT_PROMPTS[mode]}\n\nReturn only the bullet list.`;
+  const prompt = `${WHOLE_TEXT_PROMPTS[mode]}\n\nReturn only the JSON object.`;
 
   const response = await client.messages.create({
     model,
