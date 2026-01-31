@@ -12,6 +12,22 @@ type LlmResult = {
   totalTokens?: number | null;
 };
 
+function getUtcTimestamp(): string {
+  const now = new Date();
+
+  const pad = (n: number) => n.toString().padStart(2, "0");
+
+  return (
+    `${now.getUTCFullYear()}-` +
+    `${pad(now.getUTCMonth() + 1)}-` +
+    `${pad(now.getUTCDate())} ` +
+    `${pad(now.getUTCHours())}:` +
+    `${pad(now.getUTCMinutes())}:` +
+    `${pad(now.getUTCSeconds())} UTC`
+  );
+}
+
+
 const SYSTEM_INSTRUCTION =
   "You are a careful editor. Preserve meaning, simplify language to the requested level, avoid adding facts, and keep edits minimal.";
 
@@ -30,7 +46,7 @@ const WHOLE_TEXT_PROMPTS: Record<WholeTextMode, string> = {
     "{ \"sections\": { \"Important dates\": string[], \"Things to do\": string[], \"Things to know\": string[] }, " +
     "\"events\": [{ \"title\": string, \"start\": string|null, \"end\": string|null, \"timezone\": string|null, \"location\": string|null, \"details\": string|null }] }. " +
     "Always include the three section headings in this order. Use \"None\" as the only entry when a section has no items. " +
-    "Dates should be ISO 8601 (YYYY-MM-DD for all-day; include time with timezone offset when present). " +
+    "Dates should be ISO 8601 (YYYY-MM-DD for all-day; include time with timezone offset when present)" +
     "Include an event object only when the text specifies a real date or time. " +
     "Return only valid JSON without markdown or commentary. Do not add facts or assumptions.",
 };
@@ -52,7 +68,14 @@ export async function simplifyWithLlm(
     apiKey,
   });
 
-  const prompt = `${TONE_PROMPTS[tone]}\n\nSimplify the following paragraph to ${level} reading level. Return only the simplified paragraph.`;
+  const nowUtc = getUtcTimestamp();
+
+  const prompt =
+    `Current date and time: ${nowUtc}\n` +
+    `${TONE_PROMPTS[tone]}\n\n` +
+    `Simplify the following paragraph to ${level} reading level. ` +
+    `Return only the simplified paragraph.`;
+
 
   const response = await client.messages.create({
     model,
@@ -97,7 +120,13 @@ export async function extractKeyInfoWithLlm(text: string, mode: WholeTextMode): 
     apiKey,
   });
 
-  const prompt = `${WHOLE_TEXT_PROMPTS[mode]}\n\nReturn only the JSON object.`;
+  const nowUtc = getUtcTimestamp();
+
+  const prompt =
+    `Current date and time: ${nowUtc}\n` +
+    `${WHOLE_TEXT_PROMPTS[mode]}\n\n` +
+    `Return only the JSON object.`;
+
 
   const response = await client.messages.create({
     model,
