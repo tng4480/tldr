@@ -40,14 +40,37 @@ function App() {
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
 
   const highlightTerms = useMemo(() => computeTfIdfHighlights(pageText, 14), [pageText]);
-  const keyInfoLines = useMemo(
-    () =>
-      keyInfoResult
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean),
-    [keyInfoResult],
-  );
+   const dateTerms = useMemo(() => extractDateHighlights(pageText, 24), [pageText]);
+
+  const keyInfoPayload = useMemo(() => {
+    try {
+      const parsed = JSON.parse(keyInfoResult) as { sections?: unknown; events?: unknown };
+      if (!parsed || typeof parsed !== "object") {
+        return null;
+      }
+      const sections = (parsed as any).sections;
+      if (!sections || typeof sections !== "object") {
+        return null;
+      }
+      const events = Array.isArray((parsed as any).events) ? ((parsed as any).events as any[]) : [];
+      return {
+        sections: sections as Record<string, string[]>,
+        events,
+      };
+    } catch {
+      return null;
+    }
+  }, [keyInfoResult]);
+
+  const keyInfoLines = useMemo(() => {
+    if (!keyInfoResult) {
+      return [];
+    }
+    return keyInfoResult
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }, [keyInfoResult]);
 
   const getActiveTabId = useCallback(async (): Promise<number | null> => {
     return await new Promise<number | null>((resolve) => {
@@ -153,7 +176,8 @@ function App() {
       setHighlightState({ isLoading: false, error: "Analyze the page first.", count: null });
       return;
     }
-    if (!highlightTerms.length) {
+    const highlights = Array.from(new Set([...highlightTerms, ...dateTerms].map((term) => term.trim()).filter(Boolean)));
+    if (!highlights.length) {
       setHighlightState({ isLoading: false, error: "No highlight terms found.", count: null });
       return;
     }
@@ -162,10 +186,10 @@ function App() {
       type: "ApplyHighlightsRequest",
       requestId: createRequestId("highlight-terms"),
       tabId,
-      highlights: highlightTerms,
+      highlights,
       highlightType: "keywords",
     });
-  }, [highlightTerms, pageText, tabId]);
+  }, [dateTerms, highlightTerms, pageText, tabId]);
 
   const handleKeyInfo = useCallback(() => {
     if (!tabId) {
@@ -223,6 +247,48 @@ function App() {
         <h3 style={{ marginTop: 0 }}>Key information</h3>
         {keyInfoState.isLoading ? (
           <div style={{ opacity: 0.7 }}>Extracting key info…</div>
+        ) : keyInfoPayload ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {["Important dates", "Things to do", "Things to know"].map((heading) => {
+              const items = Array.isArray((keyInfoPayload.sections as any)[heading])
+                ? ((keyInfoPayload.sections as any)[heading] as string[])
+                : [];
+              return (
+                <div key={heading}>
+                  <div style={{ fontWeight: 600, marginBottom: "6px" }}>{heading}</div>
+                  <ul style={{ paddingLeft: "16px", margin: 0 }}>
+                    {(items.length ? items : ["None"]).map((item, index) => (
+                      <li key={`${heading}-${index}`} style={{ marginBottom: "6px", whiteSpace: "pre-wrap" }}>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+
+            {keyInfoPayload.events?.length ? (
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: "6px" }}>Add to calendar</div>
+                <ul style={{ paddingLeft: "16px", margin: 0 }}>
+                  {keyInfoPayload.events
+                    .filter((event) => typeof event?.calendarUrl === "string" && event.calendarUrl.length > 0)
+                    .map((event, index) => (
+                      <li key={`${event.title ?? "event"}-${index}`} style={{ marginBottom: "6px" }}>
+                        <a
+                          href={event.calendarUrl as string}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: "#60a5fa" }}
+                        >
+                          {event.title ?? "Open in Google Calendar"}
+                        </a>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         ) : keyInfoResult ? (
           <ul style={{ paddingLeft: "16px", margin: 0 }}>
             {keyInfoLines.map((line, index) => (
