@@ -4,11 +4,97 @@ import { authOptions } from "@/lib/auth";
 import { computeStableHash } from "@tldr/core";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateEntitlements } from "@/lib/entitlements";
+import { buildGoogleCalendarTemplateUrl } from "@/lib/googleCalendar";
 import { extractKeyInfoWithLlm, WholeTextMode } from "@/lib/llm";
 
 export const runtime = "nodejs";
 
 const ALLOWED_MODES: WholeTextMode[] = ["key_info"];
+
+type KeyInfoPayload = {
+  sections: Record<string, string[]>;
+  events: Array<{
+    title: string;
+    start?: string | null;
+    end?: string | null;
+    timezone?: string | null;
+    location?: string | null;
+    details?: string | null;
+    calendarUrl?: string | null;
+  }>;
+};
+
+const KEY_INFO_HEADINGS = ["Important dates", "Things to do", "Things to know"] as const;
+
+function stripJsonFence(value: string): string {
+  const trimmed = value.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fencedMatch) {
+    return fencedMatch[1].trim();
+  }
+  return trimmed;
+}
+
+function parseKeyInfoPayload(rawText: string): KeyInfoPayload | null {
+  try {
+    const cleaned = stripJsonFence(rawText);
+    if (!cleaned) {
+      return null;
+    }
+    const parsed = JSON.parse(cleaned) as { sections?: unknown; events?: unknown };
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const sections = (parsed as any).sections;
+    if (!sections || typeof sections !== "object") {
+      return null;
+    }
+    const normalizedSections: Record<string, string[]> = {};
+    KEY_INFO_HEADINGS.forEach((heading) => {
+      const items = Array.isArray((sections as any)[heading]) ? ((sections as any)[heading] as unknown[]) : [];
+      normalizedSections[heading] = items
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    });
+    const events = Array.isArray((parsed as any).events) ? ((parsed as any).events as unknown[]) : [];
+    const normalizedEvents = events
+      .filter((event): event is Record<string, unknown> => !!event && typeof event === "object")
+      .map((event) => {
+        const title = typeof event.title === "string" ? event.title.trim() : "";
+        const normalizedEvent = {
+          title,
+          start: typeof event.start === "string" ? event.start.trim() : null,
+          end: typeof event.end === "string" ? event.end.trim() : null,
+          timezone: typeof event.timezone === "string" ? event.timezone.trim() : null,
+          location: typeof event.location === "string" ? event.location.trim() : null,
+          details: typeof event.details === "string" ? event.details.trim() : null,
+          calendarUrl: typeof event.calendarUrl === "string" ? event.calendarUrl : null,
+        };
+        if (!normalizedEvent.title) {
+          return null;
+        }
+        const calendarUrl =
+          normalizedEvent.calendarUrl ??
+          buildGoogleCalendarTemplateUrl({
+            title: normalizedEvent.title,
+            start: normalizedEvent.start ?? null,
+            end: normalizedEvent.end ?? null,
+            timezone: normalizedEvent.timezone ?? null,
+            location: normalizedEvent.location ?? null,
+            details: normalizedEvent.details ?? null,
+          });
+        return { ...normalizedEvent, calendarUrl };
+      })
+      .filter((event): event is NonNullable<typeof event> => !!event);
+    return {
+      sections: normalizedSections,
+      events: normalizedEvents,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -72,11 +158,13 @@ export async function POST(request: Request) {
   }
 
   const llmResult = await extractKeyInfoWithLlm(text, mode);
+  const parsedPayload = parseKeyInfoPayload(llmResult.simplifiedText);
+  const resultText = parsedPayload ? JSON.stringify(parsedPayload) : llmResult.simplifiedText;
 
   await supabaseAdmin.from("cached_simplifications").insert({
     content_hash: contentHash,
     reading_level: "plain",
-    simplified_text: llmResult.simplifiedText,
+    simplified_text: resultText,
     model: llmResult.model ?? null,
   });
 
@@ -94,5 +182,5 @@ export async function POST(request: Request) {
     .update({ monthly_usage: monthlyUsage + 1, monthly_usage_period: entitlements.usagePeriod })
     .eq("id", userId);
 
-  return NextResponse.json({ resultText: llmResult.simplifiedText, cached: false });
+  return NextResponse.json({ resultText, cached: false });
 }

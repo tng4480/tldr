@@ -222,6 +222,44 @@ export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
     .map(([word]) => word);
 }
 
+export function extractDateHighlights(text: string, maxMatches = 12): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const patterns = [
+    /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[\s,]+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?\b/gi,
+    /\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b/g,
+    /\b\d{1,2}[-/]\d{1,2}(?:[-/]\d{2,4})?\b/g,
+    /\b(?:mon|tue|tues|wed|thu|thur|fri|sat|sun)(?:day)?(?:,\s*)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[\s,]+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?\b/gi,
+  ];
+
+  const matches: Array<{ value: string; index: number }> = [];
+  patterns.forEach((pattern) => {
+    let match: RegExpExecArray | null = pattern.exec(trimmed);
+    while (match) {
+      matches.push({ value: match[0].trim(), index: match.index });
+      match = pattern.exec(trimmed);
+    }
+    pattern.lastIndex = 0;
+  });
+
+  const seen = new Set<string>();
+  return matches
+    .sort((a, b) => a.index - b.index)
+    .map((match) => match.value)
+    .filter((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxMatches);
+}
+
 type SentenceVector = Map<string, number>;
 
 function buildSentenceVectors(text: string): { sentences: string[]; vectors: SentenceVector[] } {
