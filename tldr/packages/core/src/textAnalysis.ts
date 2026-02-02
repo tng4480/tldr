@@ -172,54 +172,86 @@ export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
 
   const doc = nlp.readDoc(text);
   const sentences = doc.sentences();
-  const sentenceCount = sentences.length();
-  if (sentenceCount === 0) {
+  if (sentences.length() === 0) {
     return [];
   }
 
-  const allWords: string[] = [];
-  const documentFrequency = new Map<string, number>();
+  const candidates = new Map<string, { phrase: string; score: number }>();
+  const isNumeric = (value: string) => /^[\d.,]+$/.test(value);
 
   sentences.each((sentence: any) => {
-    const tokens = sentence.tokens().filter((token: any) => token.out(its.type) === "word");
-    const normalizedWords = toStringArray(tokens.out(its.normal))
-      .map((word) => word.toLowerCase())
-      .filter((word) => word && !STOP_WORDS.has(word));
-
-    if (!normalizedWords.length) {
-      return;
-    }
-
-    allWords.push(...normalizedWords);
-    const uniqueWords = new Set(normalizedWords);
-    uniqueWords.forEach((word) => {
-      documentFrequency.set(word, (documentFrequency.get(word) ?? 0) + 1);
+    const tokenList = sentence.tokens().filter((token: any) => token.out(its.type) === "word");
+    const normalizedTokens: Array<{
+      value: string;
+      normal: string;
+      pos: string;
+      isStopword: boolean;
+      isNumber: boolean;
+    }> = [];
+    tokenList.each((token: any) => {
+      const value = String(token.out(its.value));
+      const normal = String(token.out(its.normal)).toLowerCase();
+      const pos = String(token.out(its.pos));
+      normalizedTokens.push({
+        value,
+        normal,
+        pos,
+        isStopword: STOP_WORDS.has(normal),
+        isNumber: isNumeric(value),
+      });
     });
+
+    for (let index = 0; index < normalizedTokens.length; index += 1) {
+      let cursor = index;
+
+      // spaCy-style noun chunk approximation: (ADJ)* followed by (NOUN|PROPN)+.
+      while (cursor < normalizedTokens.length && normalizedTokens[cursor].pos === "ADJ") {
+        cursor += 1;
+      }
+      const nounStart = cursor;
+      while (
+        cursor < normalizedTokens.length &&
+        (normalizedTokens[cursor].pos === "NOUN" || normalizedTokens[cursor].pos === "PROPN")
+      ) {
+        cursor += 1;
+      }
+
+      if (cursor === nounStart) {
+        continue;
+      }
+
+      const phraseTokens = normalizedTokens.slice(index, cursor);
+      const phrase = phraseTokens.map((token) => token.value).join(" ").trim();
+      if (!phrase || phrase.length < 3) {
+        index = cursor - 1;
+        continue;
+      }
+      if (!phraseTokens.some((token) => !token.isStopword)) {
+        index = cursor - 1;
+        continue;
+      }
+      if (phraseTokens.every((token) => token.isNumber)) {
+        index = cursor - 1;
+        continue;
+      }
+
+      // Score chunks by length and boost those with proper nouns for salience.
+      const hasProper = phraseTokens.some((token) => token.pos === "PROPN");
+      const score = phraseTokens.length + (hasProper ? 2 : 0);
+      const key = phrase.toLowerCase();
+      const existing = candidates.get(key);
+      if (!existing || score > existing.score) {
+        candidates.set(key, { phrase, score });
+      }
+
+      index = cursor - 1;
+    }
   });
 
-  if (!allWords.length) {
-    return [];
-  }
-
-  const termFrequency = new Map<string, number>();
-  allWords.forEach((word) => {
-    termFrequency.set(word, (termFrequency.get(word) ?? 0) + 1);
-  });
-
-  const totalWords = allWords.length;
-  const tfidf: Array<[string, number]> = [];
-
-  termFrequency.forEach((count, word) => {
-    const tf = count / totalWords;
-    const docFreq = documentFrequency.get(word) ?? 0;
-    const idf = Math.log((sentenceCount + 1) / (1 + docFreq)) + 1;
-    tfidf.push([word, tf * idf]);
-  });
-
-  return tfidf
-    .sort((a, b) => b[1] - a[1])
+  return [...candidates.values()]
+    .sort((a, b) => b.score - a.score || b.phrase.length - a.phrase.length)
     .slice(0, topWords)
-    .map(([word]) => word);
+    .map((candidate) => candidate.phrase);
 }
 
 export function extractDateHighlights(text: string, maxMatches = 12): string[] {
