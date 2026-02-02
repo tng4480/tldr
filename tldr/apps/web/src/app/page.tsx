@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { buildGoogleCalendarTemplateUrl } from "@/lib/googleCalendar";
 import type { SimplifyTone, WholeTextMode } from "@/lib/llm";
 import {
-  computeTfIdfHighlights,
+  computeSpacyStyleHighlights,
   detectHardSentences,
   extractDateHighlights,
   extractKeywords,
@@ -23,6 +23,7 @@ import {
   STOP_WORDS,
   wordCount,
 } from "@tldr/core";
+import type { HighlightSpan } from "@tldr/core";
 
 type ReadingLevel = "simple" | "gcse" | "plain";
 
@@ -153,6 +154,8 @@ export default function HomePage() {
     error: null,
   });
 
+  const normalizedText = useMemo(() => text.replace(/\s+/g, " ").trim(), [text]);
+
   useEffect(() => {
     if (didInitFromQuery.current) {
       return;
@@ -164,7 +167,7 @@ export default function HomePage() {
     didInitFromQuery.current = true;
   }, []);
 
-  const sentences = useMemo(() => splitIntoSentences(text), [text]);
+  const sentences = useMemo(() => splitIntoSentences(normalizedText), [normalizedText]);
   const keywords = useMemo(() => extractKeywords(text, 8), [text]);
   const hardSentences = useMemo(() => detectHardSentences(sentences), [sentences]);
   const keySentences = useMemo(() => pickTopSentences(sentences, 3), [sentences]);
@@ -174,24 +177,98 @@ export default function HomePage() {
     () => keywords.filter((keyword) => !STOP_WORDS.has(keyword.toLowerCase())),
     [keywords],
   );
-  const highlightTerms = useMemo(() => computeTfIdfHighlights(text, 14), [text]);
-  const dateTerms = useMemo(() => extractDateHighlights(text, 12), [text]);
-  const highlightSet = useMemo(
-    () => new Set(highlightTerms.map((term) => term.toLowerCase())),
-    [highlightTerms],
-  );
-  const dateSet = useMemo(() => new Set(dateTerms.map((term) => term.toLowerCase())), [dateTerms]);
-  const highlightRegex = useMemo(() => {
-    const allTerms = [...highlightTerms, ...dateTerms]
-      .map((term) => term.trim())
-      .filter(Boolean);
-    if (!allTerms.length) {
-      return null;
+  const highlightSpans = useMemo(() => computeSpacyStyleHighlights(normalizedText), [normalizedText]);
+  const dateTerms = useMemo(() => extractDateHighlights(normalizedText, 12), [normalizedText]);
+  const dateSpans = useMemo(() => {
+    if (!dateTerms.length) {
+      return [];
     }
-    const deduped = Array.from(new Set(allTerms));
-    deduped.sort((a, b) => b.length - a.length);
-    return new RegExp(`(${deduped.map(escapeRegExp).join("|")})`, "gi");
-  }, [highlightTerms, dateTerms]);
+    const spans: HighlightSpan[] = [];
+    dateTerms.forEach((term) => {
+      const regex = new RegExp(escapeRegExp(term), "gi");
+      let match: RegExpExecArray | null = regex.exec(normalizedText);
+      while (match) {
+        spans.push({
+          text: match[0],
+          start: match.index,
+          end: match.index + match[0].length,
+        });
+        match = regex.exec(normalizedText);
+      }
+    });
+    return spans;
+  }, [dateTerms, normalizedText]);
+  const highlightBlocks = useMemo(() => {
+    const overlaps = (span: HighlightSpan) =>
+      highlightSpans.some((highlight) => span.start < highlight.end && span.end > highlight.start);
+    const filteredDates = dateSpans.filter((span) => !overlaps(span));
+    const typedHighlights = highlightSpans.map((span) => ({ ...span, kind: "highlight" as const }));
+    const typedDates = filteredDates.map((span) => ({ ...span, kind: "date" as const }));
+    return [...typedHighlights, ...typedDates].sort((a, b) => {
+      if (a.start !== b.start) {
+        return a.start - b.start;
+      }
+      return b.end - b.start - (a.end - a.start);
+    });
+  }, [dateSpans, highlightSpans]);
+
+  const sentenceRanges = useMemo(() => {
+    const ranges: Array<{ sentence: string; start: number; end: number }> = [];
+    let searchStart = 0;
+    sentences.forEach((sentence) => {
+      const index = normalizedText.indexOf(sentence, searchStart);
+      if (index === -1) {
+        return;
+      }
+      ranges.push({ sentence, start: index, end: index + sentence.length });
+      searchStart = index + sentence.length;
+    });
+    return ranges;
+  }, [normalizedText, sentences]);
+
+  const renderSentence = useCallback(
+    (sentence: string, sentenceStart: number) => {
+      const sentenceEnd = sentenceStart + sentence.length;
+      const spans = highlightBlocks.filter((span) => span.start < sentenceEnd && span.end > sentenceStart);
+      if (!spans.length) {
+        return sentence;
+      }
+      const sorted = [...spans].sort((a, b) => {
+        if (a.start !== b.start) {
+          return a.start - b.start;
+        }
+        return b.end - b.start - (a.end - a.start);
+      });
+      const parts: React.ReactNode[] = [];
+      let cursor = sentenceStart;
+      sorted.forEach((span, index) => {
+        const start = Math.max(span.start, sentenceStart);
+        const end = Math.min(span.end, sentenceEnd);
+        if (start > cursor) {
+          parts.push(normalizedText.slice(cursor, start));
+        }
+        const spanText = normalizedText.slice(start, end);
+        parts.push(
+          <span
+            key={`${sentenceStart}-${index}-${span.kind}`}
+            className={
+              span.kind === "date"
+                ? "rounded bg-emerald-100 px-1 text-emerald-900"
+                : "rounded bg-violet-100 px-1 text-violet-900"
+            }
+          >
+            {spanText}
+          </span>,
+        );
+        cursor = end;
+      });
+      if (cursor < sentenceEnd) {
+        parts.push(normalizedText.slice(cursor, sentenceEnd));
+      }
+      return parts;
+    },
+    [highlightBlocks, normalizedText],
+  );
 
   const keyInfoPayload = useMemo(() => parseKeyInfoPayload(wholeTextResult), [wholeTextResult]);
 
@@ -379,38 +456,12 @@ export default function HomePage() {
                 <CardTitle>Highlighted reading view</CardTitle>
               </CardHeader>
               <CardContent>
-                {sentences.length ? (
+                {sentenceRanges.length ? (
                   <p className="text-sm leading-relaxed text-slate-800">
-                    {sentences.map((sentence, index) => {
-                      const content = highlightRegex
-                        ? sentence.split(highlightRegex).map((part, partIndex) => {
-                            const normalized = part.toLowerCase();
-                            if (dateSet.has(normalized)) {
-                              return (
-                                <span
-                                  key={`${sentence}-${index}-date-${partIndex}`}
-                                  className="rounded bg-emerald-100 px-1 text-emerald-900"
-                                >
-                                  {part}
-                                </span>
-                              );
-                            }
-                            if (highlightSet.has(normalized)) {
-                              return (
-                                <span
-                                  key={`${sentence}-${index}-highlight-${partIndex}`}
-                                  className="rounded bg-violet-100 px-1 text-violet-900"
-                                >
-                                  {part}
-                                </span>
-                              );
-                            }
-                            return part;
-                          })
-                        : sentence;
-
+                    {sentenceRanges.map((sentenceRange, index) => {
+                      const content = renderSentence(sentenceRange.sentence, sentenceRange.start);
                       return (
-                        <span key={`${sentence}-${index}`}>
+                        <span key={`${sentenceRange.start}-${sentenceRange.end}`}>
                           {hardSentences[index] ? (
                             <mark className="rounded bg-amber-100 px-1 text-amber-900">{content}</mark>
                           ) : (

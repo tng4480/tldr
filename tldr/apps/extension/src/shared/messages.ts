@@ -1,3 +1,5 @@
+import type { HighlightSpan } from "@tldr/core";
+
 export type MessageBase = {
   type: string;
   requestId: string;
@@ -41,7 +43,7 @@ export type ExtractResult = MessageBase & {
 export type ApplyHighlightsRequest = MessageBase & {
   type: "ApplyHighlightsRequest";
   tabId: number;
-  highlights: string[];
+  highlights: HighlightSpan[] | string[];
   highlightType: "sentences" | "keywords";
 };
 

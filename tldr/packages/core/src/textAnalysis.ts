@@ -4,6 +4,12 @@ import model from "wink-eng-lite-web-model";
 const nlp = winkNLP(model);
 const its = nlp.its;
 
+export type HighlightSpan = {
+  text: string;
+  start: number;
+  end: number;
+};
+
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -166,52 +172,145 @@ export function detectHardSentences(sentences: string[]): boolean[] {
 }
 
 export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
-  if (!text.trim()) {
+  /**
+   * @deprecated Use computeSpacyStyleHighlights instead. This adapter now returns
+   * phrases derived from spaCy-style highlighting without TF-IDF scoring.
+   */
+  const spans = computeSpacyStyleHighlights(text);
+  if (!spans.length) {
     return [];
   }
+  const phrases = spans.map((span) => span.text);
+  if (!Number.isFinite(topWords) || topWords <= 0) {
+    return phrases;
+  }
+  return phrases.slice(0, topWords);
+}
 
+type TokenInfo = {
+  value: string;
+  normal: string;
+  pos: string;
+  type: string;
+  start: number;
+  end: number;
+  isStopword: boolean;
+  isNumber: boolean;
+};
+
+type HighlightCandidate = HighlightSpan & { hasProper: boolean };
+
+function buildTokenIndex(text: string): { tokens: TokenInfo[]; sentences: Array<[number, number]> } {
   const doc = nlp.readDoc(text);
-  const sentences = doc.sentences();
-  if (sentences.length() === 0) {
-    return [];
-  }
-
-  const candidates = new Map<string, { phrase: string; score: number }>();
+  const tokens: TokenInfo[] = [];
+  let cursor = 0;
   const isNumeric = (value: string) => /^[\d.,]+$/.test(value);
 
-  sentences.each((sentence: any) => {
-    const tokenList = sentence.tokens().filter((token: any) => token.out(its.type) === "word");
-    const normalizedTokens: Array<{
-      value: string;
-      normal: string;
-      pos: string;
-      isStopword: boolean;
-      isNumber: boolean;
-    }> = [];
-    tokenList.each((token: any) => {
-      const value = String(token.out(its.value));
-      const normal = String(token.out(its.normal)).toLowerCase();
-      const pos = String(token.out(its.pos));
-      normalizedTokens.push({
-        value,
-        normal,
-        pos,
-        isStopword: STOP_WORDS.has(normal),
-        isNumber: isNumeric(value),
-      });
+  doc.tokens().each((token: any) => {
+    const value = String(token.out(its.value));
+    const normal = String(token.out(its.normal)).toLowerCase();
+    const pos = String(token.out(its.pos));
+    const type = String(token.out(its.type));
+    let start = text.indexOf(value, cursor);
+    if (start === -1 && value) {
+      start = text.indexOf(value.trim(), cursor);
+    }
+    if (start === -1) {
+      start = cursor;
+    }
+    const end = Math.min(text.length, start + value.length);
+    cursor = end;
+
+    tokens.push({
+      value,
+      normal,
+      pos,
+      type,
+      start,
+      end,
+      isStopword: STOP_WORDS.has(normal),
+      isNumber: isNumeric(value),
     });
+  });
 
-    for (let index = 0; index < normalizedTokens.length; index += 1) {
+  const sentences: Array<[number, number]> = [];
+  doc.sentences().each((sentence: any) => {
+    const span = sentence.out(its.span) as number[];
+    if (!Array.isArray(span) || span.length < 2) {
+      return;
+    }
+    sentences.push([span[0], span[1]]);
+  });
+
+  return { tokens, sentences };
+}
+
+function dedupeOverlappingSpans(candidates: HighlightCandidate[]): HighlightCandidate[] {
+  const sorted = [...candidates].sort((a, b) => {
+    if (a.start !== b.start) {
+      return a.start - b.start;
+    }
+    const lengthDiff = b.end - b.start - (a.end - a.start);
+    if (lengthDiff !== 0) {
+      return lengthDiff;
+    }
+    if (a.hasProper !== b.hasProper) {
+      return a.hasProper ? -1 : 1;
+    }
+    return 0;
+  });
+
+  const deduped: HighlightCandidate[] = [];
+  for (const candidate of sorted) {
+    const last = deduped[deduped.length - 1];
+    if (!last) {
+      deduped.push(candidate);
+      continue;
+    }
+    if (candidate.start >= last.end) {
+      deduped.push(candidate);
+      continue;
+    }
+    if (candidate.start === last.start && candidate.end > last.end) {
+      deduped[deduped.length - 1] = candidate;
+    }
+  }
+  return deduped;
+}
+
+/**
+ * Approximate spaCy noun-chunk based highlighting using wink-nlp.
+ * Note: wink-nlp lacks dependency parsing, so we approximate noun chunks with
+ * (ADJ)* + (NOUN|PROPN)+ patterns confined to sentence boundaries.
+ */
+export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const { tokens, sentences } = buildTokenIndex(text);
+  if (!tokens.length || !sentences.length) {
+    return [];
+  }
+
+  const nounChunkCandidates: HighlightCandidate[] = [];
+
+  for (const [sentenceStart, sentenceEnd] of sentences) {
+    const sentenceTokens = tokens
+      .slice(sentenceStart, sentenceEnd + 1)
+      .filter((token) => token.type === "word");
+
+    for (let index = 0; index < sentenceTokens.length; index += 1) {
       let cursor = index;
-
-      // spaCy-style noun chunk approximation: (ADJ)* followed by (NOUN|PROPN)+.
-      while (cursor < normalizedTokens.length && normalizedTokens[cursor].pos === "ADJ") {
+      while (cursor < sentenceTokens.length && sentenceTokens[cursor].pos === "ADJ") {
         cursor += 1;
       }
+
       const nounStart = cursor;
       while (
-        cursor < normalizedTokens.length &&
-        (normalizedTokens[cursor].pos === "NOUN" || normalizedTokens[cursor].pos === "PROPN")
+        cursor < sentenceTokens.length &&
+        (sentenceTokens[cursor].pos === "NOUN" || sentenceTokens[cursor].pos === "PROPN")
       ) {
         cursor += 1;
       }
@@ -220,8 +319,10 @@ export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
         continue;
       }
 
-      const phraseTokens = normalizedTokens.slice(index, cursor);
-      const phrase = phraseTokens.map((token) => token.value).join(" ").trim();
+      const phraseTokens = sentenceTokens.slice(index, cursor);
+      const start = phraseTokens[0].start;
+      const end = phraseTokens[phraseTokens.length - 1].end;
+      const phrase = text.slice(start, end).trim();
       if (!phrase || phrase.length < 3) {
         index = cursor - 1;
         continue;
@@ -235,23 +336,61 @@ export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
         continue;
       }
 
-      // Score chunks by length and boost those with proper nouns for salience.
-      const hasProper = phraseTokens.some((token) => token.pos === "PROPN");
-      const score = phraseTokens.length + (hasProper ? 2 : 0);
-      const key = phrase.toLowerCase();
-      const existing = candidates.get(key);
-      if (!existing || score > existing.score) {
-        candidates.set(key, { phrase, score });
-      }
-
+      nounChunkCandidates.push({
+        text: phrase,
+        start,
+        end,
+        hasProper: phraseTokens.some((token) => token.pos === "PROPN"),
+      });
       index = cursor - 1;
     }
+  }
+
+  const nounChunks = dedupeOverlappingSpans(nounChunkCandidates);
+
+  const hasCoverage = (start: number, end: number) =>
+    nounChunks.some((chunk) => start >= chunk.start && end <= chunk.end);
+
+  const secondaryHighlights: HighlightCandidate[] = [];
+  const seenSecondary = new Set<string>();
+  tokens.forEach((token) => {
+    if (token.type !== "word") {
+      return;
+    }
+    if (token.pos !== "PROPN" && token.pos !== "ADJ") {
+      return;
+    }
+    if (hasCoverage(token.start, token.end)) {
+      return;
+    }
+    const key = `${token.start}-${token.end}`;
+    if (seenSecondary.has(key)) {
+      return;
+    }
+    seenSecondary.add(key);
+    secondaryHighlights.push({
+      text: text.slice(token.start, token.end),
+      start: token.start,
+      end: token.end,
+      hasProper: token.pos === "PROPN",
+    });
   });
 
-  return [...candidates.values()]
-    .sort((a, b) => b.score - a.score || b.phrase.length - a.phrase.length)
-    .slice(0, topWords)
-    .map((candidate) => candidate.phrase);
+  return [...nounChunks, ...secondaryHighlights]
+    .sort((a, b) => {
+      if (a.start !== b.start) {
+        return a.start - b.start;
+      }
+      const lengthDiff = b.end - b.start - (a.end - a.start);
+      if (lengthDiff !== 0) {
+        return lengthDiff;
+      }
+      if (a.hasProper !== b.hasProper) {
+        return a.hasProper ? -1 : 1;
+      }
+      return 0;
+    })
+    .map(({ text: spanText, start, end }) => ({ text: spanText, start, end }));
 }
 
 export function extractDateHighlights(text: string, maxMatches = 12): string[] {

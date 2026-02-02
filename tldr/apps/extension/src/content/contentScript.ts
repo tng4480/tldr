@@ -5,6 +5,7 @@ import {
   rangeToOffsets,
   type TextNodeInfo,
 } from "@tldr/core-dom";
+import type { HighlightSpan } from "@tldr/core";
 import { splitIntoSentences } from "@tldr/core";
 import type {
   ApplyHighlightsRequest,
@@ -154,7 +155,32 @@ function buildKeywordRanges(text: string, nodes: TextNodeInfo[], terms: string[]
   return ranges;
 }
 
-function applyHighlights(highlights: string[], highlightType: ApplyHighlightsRequest["highlightType"]): number {
+function isHighlightSpan(value: HighlightSpan | string): value is HighlightSpan {
+  return typeof value === "object" && value !== null && "start" in value && "end" in value;
+}
+
+function buildSpanRanges(text: string, nodes: TextNodeInfo[], spans: HighlightSpan[]) {
+  const ranges: Range[] = [];
+  highlightEntries = [];
+
+  spans.forEach((span) => {
+    const start = Math.max(0, Math.min(text.length, span.start));
+    const end = Math.max(0, Math.min(text.length, span.end));
+    if (end <= start) {
+      return;
+    }
+    const range = offsetsToRange(nodes, start, end);
+    if (!range) {
+      return;
+    }
+    ranges.push(range);
+    highlightEntries.push({ sentence: span.text, range, start, end });
+  });
+
+  return ranges;
+}
+
+function applyHighlights(highlights: Array<HighlightSpan | string>, highlightType: ApplyHighlightsRequest["highlightType"]): number {
   clearHighlights();
   if (!highlights.length) {
     return 0;
@@ -173,10 +199,19 @@ function applyHighlights(highlights: string[], highlightType: ApplyHighlightsReq
     nodes: nodes.length,
   });
 
-  const ranges =
-    highlightType === "keywords"
-      ? buildKeywordRanges(text, nodes, requested)
-      : buildSentenceRanges(text, nodes, requested);
+  let ranges: Range[] = [];
+  if (highlightType === "keywords") {
+    const spanHighlights = requested.filter(isHighlightSpan) as HighlightSpan[];
+    if (spanHighlights.length) {
+      ranges = buildSpanRanges(text, nodes, spanHighlights);
+    } else {
+      const termHighlights = requested.filter((item): item is string => typeof item === "string");
+      ranges = buildKeywordRanges(text, nodes, termHighlights);
+    }
+  } else {
+    const sentenceHighlights = requested.filter((item): item is string => typeof item === "string");
+    ranges = buildSentenceRanges(text, nodes, sentenceHighlights);
+  }
 
   if ("highlights" in CSS) {
     log("cs", "applyHighlights using CSS Custom Highlight API", { ranges: ranges.length });

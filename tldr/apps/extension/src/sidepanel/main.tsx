@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { computeTfIdfHighlights, extractDateHighlights } from "@tldr/core";
+import type { HighlightSpan } from "@tldr/core";
+import { computeSpacyStyleHighlights, extractDateHighlights } from "@tldr/core";
 import type { ApplyHighlightsAck, ExtractResult, LlmActionResult } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
@@ -39,8 +40,44 @@ function App() {
   });
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
 
-  const highlightTerms = useMemo(() => computeTfIdfHighlights(pageText, 14), [pageText]);
+  const highlightSpans = useMemo(() => computeSpacyStyleHighlights(pageText), [pageText]);
   const dateTerms = useMemo(() => extractDateHighlights(pageText, 24), [pageText]);
+
+  const dateSpans = useMemo(() => {
+    if (!dateTerms.length || !pageText.trim()) {
+      return [];
+    }
+    const spans: HighlightSpan[] = [];
+    const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    dateTerms.forEach((term) => {
+      const regex = new RegExp(escapeRegExp(term), "gi");
+      let match: RegExpExecArray | null = regex.exec(pageText);
+      while (match) {
+        spans.push({
+          text: match[0],
+          start: match.index,
+          end: match.index + match[0].length,
+        });
+        match = regex.exec(pageText);
+      }
+    });
+    return spans;
+  }, [dateTerms, pageText]);
+
+  const combinedHighlights = useMemo(() => {
+    if (!highlightSpans.length && !dateSpans.length) {
+      return [];
+    }
+    const overlaps = (span: HighlightSpan) =>
+      highlightSpans.some((highlight) => span.start < highlight.end && span.end > highlight.start);
+    const filteredDates = dateSpans.filter((span) => !overlaps(span));
+    return [...highlightSpans, ...filteredDates].sort((a, b) => {
+      if (a.start !== b.start) {
+        return a.start - b.start;
+      }
+      return b.end - b.start - (a.end - a.start);
+    });
+  }, [dateSpans, highlightSpans]);
 
   const keyInfoPayload = useMemo(() => {
     try {
@@ -176,8 +213,7 @@ function App() {
       setHighlightState({ isLoading: false, error: "Analyze the page first.", count: null });
       return;
     }
-    const highlights = Array.from(new Set([...highlightTerms, ...dateTerms].map((term) => term.trim()).filter(Boolean)));
-    if (!highlights.length) {
+    if (!combinedHighlights.length) {
       setHighlightState({ isLoading: false, error: "No highlight terms found.", count: null });
       return;
     }
@@ -186,10 +222,10 @@ function App() {
       type: "ApplyHighlightsRequest",
       requestId: createRequestId("highlight-terms"),
       tabId,
-      highlights,
+      highlights: combinedHighlights,
       highlightType: "keywords",
     });
-  }, [dateTerms, highlightTerms, pageText, tabId]);
+  }, [combinedHighlights, pageText, tabId]);
 
   const handleKeyInfo = useCallback(() => {
     if (!tabId) {
