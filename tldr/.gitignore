@@ -47,3 +47,5 @@ dist/
 
 # package builds
 packages/**/dist/
+
+__pycache__
