@@ -24,6 +24,9 @@ const MARK_ATTR = "data-tldr-highlight";
 const POPUP_ID = "tldr-inline-popover";
 const EMBOLDEN_ATTR = "data-tldr-embolden";
 const EMBOLDEN_CLASS = "tldr-embolden";
+const DEEMPHASIZE_CLASS = "tldr-deemphasize";
+const DEEMPHASIZE_COLOR_VAR = "--tldr-deemphasis-color";
+const BASE_COLOR_VAR = "--tldr-base-color";
 
 type HighlightEntry = {
   sentence: string;
@@ -37,6 +40,7 @@ let highlightEntries: HighlightEntry[] = [];
 let observer: MutationObserver | null = null;
 let updateTimeout: number | null = null;
 let styleInjected = false;
+let deemphasizedRoot: Element | null = null;
 
 function signalContentReady() {
   // This must run only after `chrome.runtime.onMessage.addListener(...)` is registered,
@@ -77,11 +81,18 @@ function ensureHighlightStyles() {
 
     ::highlight(${HIGHLIGHT_NAME_KEYWORDS}) {
       background-color: transparent;
+      color: var(${BASE_COLOR_VAR});
       text-shadow: 0.35px 0 0 currentColor, -0.35px 0 0 currentColor;
     }
 
     .${EMBOLDEN_CLASS}[${EMBOLDEN_ATTR}] {
+      color: var(${BASE_COLOR_VAR});
       text-shadow: 0.35px 0 0 currentColor, -0.35px 0 0 currentColor;
+    }
+
+    .${DEEMPHASIZE_CLASS},
+    .${DEEMPHASIZE_CLASS} * {
+    color: var(${DEEMPHASIZE_COLOR_VAR});
     }
   `;
   document.head.appendChild(style);
@@ -101,6 +112,7 @@ function ensureObserver() {
 
 function clearHighlights() {
   highlightEntries = [];
+  clearDeemphasis();
   if ("highlights" in CSS) {
     CSS.highlights.delete(HIGHLIGHT_NAME_SENTENCES);
     CSS.highlights.delete(HIGHLIGHT_NAME_KEYWORDS);
@@ -108,6 +120,55 @@ function clearHighlights() {
   document
     .querySelectorAll(`mark[${MARK_ATTR}], span[${EMBOLDEN_ATTR}]`)
     .forEach((node) => node.replaceWith(...node.childNodes));
+}
+
+function parseRgbColor(value: string): { r: number; g: number; b: number; a: number } | null {
+  const match = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([0-9.]+))?\s*\)/i);
+  if (!match) {
+    return null;
+  }
+  const r = Number.parseInt(match[1] ?? "", 10);
+  const g = Number.parseInt(match[2] ?? "", 10);
+  const b = Number.parseInt(match[3] ?? "", 10);
+  const a = match[4] !== undefined ? Number.parseFloat(match[4]) : 1;
+  if ([r, g, b, a].some((n) => Number.isNaN(n))) {
+    return null;
+  }
+  return { r, g, b, a };
+}
+
+function applyDeemphasis(root: Element) {
+  const computed = window.getComputedStyle(root);
+  const parsed = parseRgbColor(computed.color);
+  if (!parsed) {
+    return;
+  }
+
+  const baseColor = `rgba(${parsed.r}, ${parsed.g}, ${parsed.b}, ${parsed.a})`;
+  const luma = parsed.r * 0.2126 + parsed.g * 0.7152 + parsed.b * 0.0722;
+  const gray = Math.round(Math.max(0, Math.min(255, luma * 0.4 + 128 * 0.6)));
+  const deemphasisColor = `rgba(${gray}, ${gray}, ${gray}, ${parsed.a})`;
+  // const deemphasisColor = `rgba(255, 105, 180, ${parsed.a})`;
+  root.classList.add(DEEMPHASIZE_CLASS);
+  root.setAttribute("data-tldr-deemphasize", "true");
+  (root as HTMLElement).style.setProperty(BASE_COLOR_VAR, baseColor);
+  (root as HTMLElement).style.setProperty(DEEMPHASIZE_COLOR_VAR, deemphasisColor);
+  deemphasizedRoot = root;
+}
+
+function clearDeemphasis() {
+  if (!deemphasizedRoot) {
+    return;
+  }
+  const root = deemphasizedRoot;
+  deemphasizedRoot = null;
+  if (!root.isConnected) {
+    return;
+  }
+  root.classList.remove(DEEMPHASIZE_CLASS);
+  root.removeAttribute("data-tldr-deemphasize");
+  (root as HTMLElement).style.removeProperty(BASE_COLOR_VAR);
+  (root as HTMLElement).style.removeProperty(DEEMPHASIZE_COLOR_VAR);
 }
 
 function escapeRegExp(value: string) {
@@ -328,6 +389,7 @@ function applyHighlights(highlights: Array<HighlightSpan | string>, highlightTyp
   }
 
   if (highlightType === "keywords") {
+    applyDeemphasis(root);
     if ("highlights" in CSS) {
       log("cs", "applyHighlights using CSS Custom Highlight API (keywords)", { ranges: ranges.length });
       const highlight = new Highlight(...ranges);
