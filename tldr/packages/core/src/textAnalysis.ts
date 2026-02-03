@@ -331,10 +331,6 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
         index = cursor - 1;
         continue;
       }
-      if (phraseTokens.every((token) => token.isNumber)) {
-        index = cursor - 1;
-        continue;
-      }
 
       nounChunkCandidates.push({
         text: phrase,
@@ -354,10 +350,12 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
   const secondaryHighlights: HighlightCandidate[] = [];
   const seenSecondary = new Set<string>();
   tokens.forEach((token) => {
-    if (token.type !== "word") {
+    if (token.type !== "word" && !token.isNumber) {
       return;
     }
-    if (token.pos !== "PROPN" && token.pos !== "ADJ") {
+
+    const shouldHighlightSecondary = token.isNumber || token.pos === "PROPN" || token.pos === "ADJ";
+    if (!shouldHighlightSecondary) {
       return;
     }
     if (hasCoverage(token.start, token.end)) {

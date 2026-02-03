@@ -103,11 +103,21 @@ def render_pdf(text: str, spans, output_path="highlighted.pdf"):
 # =========================
 if __name__ == "__main__":
     text = """
-This is your time to shine in the era of AI! We are looking for amazing, creative, and purposeful individuals to join our team of world-class, highly motivated software engineers, cloud computing experts and AI visionaries during our 12-week internship program. From Agentforce, Marketing, Data, and Commerce Cloud, to Infrastructure and Security, to MuleSoft, Tableau, Slack, and everything in between, we have many opportunities available across various applications and platforms all infused with the power of artificial intelligence.
+Been building brandled with AI and basically zero technical background. Everyone talks about how easy it is now with Claude Code, Antigravity etc.., but they leave out the part where you get completely fucked by production issues that AI can't solve.
 
-Join Salesforce and define the future of Customer Relationship Management Solutions with a strong emphasis on AI-driven innovation. We deliver a scalable, high-performance cloud computing platform that not only empowers our customers but is also enhanced by AI to provide intelligent insights and automation used by millions of people around the world each day for their businesses. You will be working with a group of world-class engineers to build breakthrough features that our customers will love. The software engineering intern role will give you hands-on experience with architecture, design, implementation, and testing as you ensure we build products customers trust and love.
+Pure AI coding gets you maybe 60% there. You can build nice landing pages, set up login systems, even get a decent dashboard running. But then real subscribers start using your product and everything breaks in ways the AI never warned you about.
 
-Salesforce is the global leader in Customer Relationship Management (CRM). Companies of every size and industry are using Salesforce to transform their businesses, across sales, service, marketing, commerce, and more by connecting with customers in a whole new way. We harness technologies that can revolutionize companies, careers, and, hopefully, our world.
+Lemonsqueezy integration that worked perfectly in test mode but randomly failed with real customers. I thought I was making money while actual payments were bouncing. AI couldn't explain webhook validation or why certain cards were getting declined without proper error handling.
+
+Database performance that was fine with 10 users but completely shit with 1,000+. Every query started timing out. AI kept suggesting caching fixes instead of telling me I was running garbage queries on unindexed tables. My dashboard was loading every single data point instead of paginating like a normal human would.
+
+User sessions that just randomly logged people out. What happens when someone's subscription expires while they're using the app? How do you handle multiple browser tabs? AI could fix individual bugs but had no clue how to build proper session management.
+
+Data isolation problems where customers could see each other's data. That's a fun support ticket to get. AI had zero understanding of how to debug multi-tenant architecture or why my database setup was fundamentally broken.
+
+Billing logic that looked perfect but created accounting chaos. Proration, failed payment retries, subscription changes - the AI code "worked" but had edge cases that destroyed my revenue tracking. One customer downgrading somehow triggered three billing events and I couldn't figure out what the hell happened.
+
+The turning point was realizing I needed to be a better AI supervisor, not just blindly trust whatever code it spat out. Started setting up actual logging for critical actions, testing payment flows with real cards before launching, keeping a simple spreadsheet of what actually worked vs what looked good in dev.
 """
 
     spans = get_highlight_spans(text)
