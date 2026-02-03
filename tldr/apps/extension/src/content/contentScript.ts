@@ -18,7 +18,9 @@ import type {
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
 
-const HIGHLIGHT_NAME = "tldr-highlight";
+const HIGHLIGHT_NAME_SENTENCES = "tldr-highlight-sentences";
+const HIGHLIGHT_NAME_KEYWORDS = "tldr-highlight-keywords";
+const MARK_ATTR = "data-tldr-highlight";
 const POPUP_ID = "tldr-inline-popover";
 const EMBOLDEN_ATTR = "data-tldr-embolden";
 const EMBOLDEN_CLASS = "tldr-embolden";
@@ -35,7 +37,6 @@ let highlightEntries: HighlightEntry[] = [];
 let observer: MutationObserver | null = null;
 let updateTimeout: number | null = null;
 let styleInjected = false;
-let emboldenStyleInjected = false;
 
 function signalContentReady() {
   // This must run only after `chrome.runtime.onMessage.addListener(...)` is registered,
@@ -70,26 +71,21 @@ function ensureHighlightStyles() {
   }
   const style = document.createElement("style");
   style.textContent = `
-    ::highlight(${HIGHLIGHT_NAME}) {
+    ::highlight(${HIGHLIGHT_NAME_SENTENCES}) {
       background-color: rgba(250, 204, 21, 0.55);
+    }
+
+    ::highlight(${HIGHLIGHT_NAME_KEYWORDS}) {
+      background-color: transparent;
+      text-shadow: 0.35px 0 0 currentColor, -0.35px 0 0 currentColor;
+    }
+
+    .${EMBOLDEN_CLASS}[${EMBOLDEN_ATTR}] {
+      text-shadow: 0.35px 0 0 currentColor, -0.35px 0 0 currentColor;
     }
   `;
   document.head.appendChild(style);
   styleInjected = true;
-}
-
-function ensureEmboldenStyles() {
-  if (emboldenStyleInjected) {
-    return;
-  }
-  const style = document.createElement("style");
-  style.textContent = `
-    .${EMBOLDEN_CLASS}[${EMBOLDEN_ATTR}] {
-      font-weight: 700;
-    }
-  `;
-  document.head.appendChild(style);
-  emboldenStyleInjected = true;
 }
 
 function ensureObserver() {
@@ -106,10 +102,11 @@ function ensureObserver() {
 function clearHighlights() {
   highlightEntries = [];
   if ("highlights" in CSS) {
-    CSS.highlights.delete(HIGHLIGHT_NAME);
+    CSS.highlights.delete(HIGHLIGHT_NAME_SENTENCES);
+    CSS.highlights.delete(HIGHLIGHT_NAME_KEYWORDS);
   }
   document
-    .querySelectorAll(`mark[data-${HIGHLIGHT_NAME}], span[${EMBOLDEN_ATTR}]`)
+    .querySelectorAll(`mark[${MARK_ATTR}], span[${EMBOLDEN_ATTR}]`)
     .forEach((node) => node.replaceWith(...node.childNodes));
 }
 
@@ -302,11 +299,7 @@ function applyHighlights(highlights: Array<HighlightSpan | string>, highlightTyp
   if (!highlights.length) {
     return 0;
   }
-  if (highlightType === "keywords") {
-    ensureEmboldenStyles();
-  } else {
-    ensureHighlightStyles();
-  }
+  ensureHighlightStyles();
 
   const root = getReadableRoot(document);
   const { text, nodes } = extractReadableText(root);
@@ -335,18 +328,24 @@ function applyHighlights(highlights: Array<HighlightSpan | string>, highlightTyp
   }
 
   if (highlightType === "keywords") {
-    warn("cs", "applyHighlights using embolden mode (DOM mutation)");
-    emboldenHighlightEntries();
+    if ("highlights" in CSS) {
+      log("cs", "applyHighlights using CSS Custom Highlight API (keywords)", { ranges: ranges.length });
+      const highlight = new Highlight(...ranges);
+      CSS.highlights.set(HIGHLIGHT_NAME_KEYWORDS, highlight);
+    } else {
+      warn("cs", "applyHighlights using embolden mode fallback (DOM mutation)");
+      emboldenHighlightEntries();
+    }
   } else {
     if ("highlights" in CSS) {
       log("cs", "applyHighlights using CSS Custom Highlight API", { ranges: ranges.length });
       const highlight = new Highlight(...ranges);
-      CSS.highlights.set(HIGHLIGHT_NAME, highlight);
+      CSS.highlights.set(HIGHLIGHT_NAME_SENTENCES, highlight);
     } else {
       warn("cs", "applyHighlights using mark fallback (DOM mutation)");
       ranges.forEach((range) => {
         const mark = document.createElement("mark");
-        mark.dataset[HIGHLIGHT_NAME] = "true";
+        mark.setAttribute(MARK_ATTR, "true");
         try {
           range.surroundContents(mark);
         } catch {
