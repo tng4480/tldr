@@ -20,6 +20,8 @@ import { log, runtimeLastError, warn } from "../shared/logger";
 
 const HIGHLIGHT_NAME = "tldr-highlight";
 const POPUP_ID = "tldr-inline-popover";
+const EMBOLDEN_ATTR = "data-tldr-embolden";
+const EMBOLDEN_CLASS = "tldr-embolden";
 
 type HighlightEntry = {
   sentence: string;
@@ -33,6 +35,7 @@ let highlightEntries: HighlightEntry[] = [];
 let observer: MutationObserver | null = null;
 let updateTimeout: number | null = null;
 let styleInjected = false;
+let emboldenStyleInjected = false;
 
 function signalContentReady() {
   // This must run only after `chrome.runtime.onMessage.addListener(...)` is registered,
@@ -75,6 +78,20 @@ function ensureHighlightStyles() {
   styleInjected = true;
 }
 
+function ensureEmboldenStyles() {
+  if (emboldenStyleInjected) {
+    return;
+  }
+  const style = document.createElement("style");
+  style.textContent = `
+    .${EMBOLDEN_CLASS}[${EMBOLDEN_ATTR}] {
+      font-weight: 700;
+    }
+  `;
+  document.head.appendChild(style);
+  emboldenStyleInjected = true;
+}
+
 function ensureObserver() {
   if (observer) {
     return;
@@ -90,9 +107,10 @@ function clearHighlights() {
   highlightEntries = [];
   if ("highlights" in CSS) {
     CSS.highlights.delete(HIGHLIGHT_NAME);
-  } else {
-    document.querySelectorAll(`mark[data-${HIGHLIGHT_NAME}]`).forEach((node) => node.replaceWith(...node.childNodes));
   }
+  document
+    .querySelectorAll(`mark[data-${HIGHLIGHT_NAME}], span[${EMBOLDEN_ATTR}]`)
+    .forEach((node) => node.replaceWith(...node.childNodes));
 }
 
 function escapeRegExp(value: string) {
@@ -159,25 +177,124 @@ function isHighlightSpan(value: HighlightSpan | string): value is HighlightSpan 
   return typeof value === "object" && value !== null && "start" in value && "end" in value;
 }
 
+function normalizeMatchText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function findClosestOccurrence(haystack: string, needle: string, expectedStart: number): number | null {
+  if (!needle) {
+    return null;
+  }
+
+  let bestIndex: number | null = null;
+  let searchIndex = haystack.indexOf(needle);
+  while (searchIndex !== -1) {
+    if (bestIndex === null || Math.abs(searchIndex - expectedStart) < Math.abs(bestIndex - expectedStart)) {
+      bestIndex = searchIndex;
+    }
+    searchIndex = haystack.indexOf(needle, searchIndex + 1);
+  }
+  return bestIndex;
+}
+
+function resolveSpanOffsets(text: string, span: HighlightSpan): { start: number; end: number } | null {
+  const expectedStart = Math.max(0, Math.min(text.length, span.start));
+  const expectedEnd = Math.max(0, Math.min(text.length, span.end));
+  if (expectedEnd <= expectedStart) {
+    return null;
+  }
+
+  const expectedSlice = normalizeMatchText(text.slice(expectedStart, expectedEnd));
+  const spanTextNormalized = normalizeMatchText(span.text);
+  if (expectedSlice && spanTextNormalized && expectedSlice === spanTextNormalized) {
+    return { start: expectedStart, end: expectedEnd };
+  }
+
+  const windowPad = 256;
+  const localStart = Math.max(0, expectedStart - windowPad);
+  const localEnd = Math.min(text.length, expectedStart + windowPad + span.text.length);
+  const localText = text.slice(localStart, localEnd);
+
+  const localIndex = findClosestOccurrence(localText, span.text, expectedStart - localStart);
+  if (localIndex !== null) {
+    return { start: localStart + localIndex, end: localStart + localIndex + span.text.length };
+  }
+
+  const localIndexInsensitive = findClosestOccurrence(localText.toLowerCase(), span.text.toLowerCase(), expectedStart - localStart);
+  if (localIndexInsensitive !== null) {
+    return { start: localStart + localIndexInsensitive, end: localStart + localIndexInsensitive + span.text.length };
+  }
+
+  const globalIndex = findClosestOccurrence(text, span.text, expectedStart);
+  if (globalIndex !== null) {
+    return { start: globalIndex, end: globalIndex + span.text.length };
+  }
+
+  const globalIndexInsensitive = findClosestOccurrence(text.toLowerCase(), span.text.toLowerCase(), expectedStart);
+  if (globalIndexInsensitive !== null) {
+    return { start: globalIndexInsensitive, end: globalIndexInsensitive + span.text.length };
+  }
+
+  return null;
+}
+
 function buildSpanRanges(text: string, nodes: TextNodeInfo[], spans: HighlightSpan[]) {
   const ranges: Range[] = [];
   highlightEntries = [];
 
   spans.forEach((span) => {
-    const start = Math.max(0, Math.min(text.length, span.start));
-    const end = Math.max(0, Math.min(text.length, span.end));
-    if (end <= start) {
+    const resolved = resolveSpanOffsets(text, span);
+    if (!resolved) {
       return;
     }
+    const start = resolved.start;
+    const end = resolved.end;
     const range = offsetsToRange(nodes, start, end);
     if (!range) {
       return;
     }
     ranges.push(range);
-    highlightEntries.push({ sentence: span.text, range, start, end });
+    highlightEntries.push({ sentence: text.slice(start, end), range, start, end });
   });
 
   return ranges;
+}
+
+function isInsideEditable(node: Node) {
+  const el = node instanceof Element ? node : node.parentElement;
+  return Boolean(el?.closest("input, textarea, [contenteditable='true']"));
+}
+
+function emboldenHighlightEntries(): number {
+  const ordered = [...highlightEntries].sort((a, b) => b.start - a.start);
+  const kept: HighlightEntry[] = [];
+
+  for (const entry of ordered) {
+    if (isInsideEditable(entry.range.commonAncestorContainer)) {
+      continue;
+    }
+    const wrapper = document.createElement("span");
+    wrapper.className = EMBOLDEN_CLASS;
+    wrapper.setAttribute(EMBOLDEN_ATTR, "true");
+
+    try {
+      const contents = entry.range.extractContents();
+      if (!contents.textContent?.trim()) {
+        continue;
+      }
+      wrapper.appendChild(contents);
+      entry.range.insertNode(wrapper);
+      const newRange = document.createRange();
+      newRange.selectNodeContents(wrapper);
+      kept.push({ ...entry, range: newRange });
+    } catch {
+      // ignore ranges that cannot be wrapped
+    }
+  }
+
+  kept.sort((a, b) => a.start - b.start);
+  highlightEntries = kept;
+  return highlightEntries.length;
 }
 
 function applyHighlights(highlights: Array<HighlightSpan | string>, highlightType: ApplyHighlightsRequest["highlightType"]): number {
@@ -185,7 +302,11 @@ function applyHighlights(highlights: Array<HighlightSpan | string>, highlightTyp
   if (!highlights.length) {
     return 0;
   }
-  ensureHighlightStyles();
+  if (highlightType === "keywords") {
+    ensureEmboldenStyles();
+  } else {
+    ensureHighlightStyles();
+  }
 
   const root = getReadableRoot(document);
   const { text, nodes } = extractReadableText(root);
@@ -213,21 +334,26 @@ function applyHighlights(highlights: Array<HighlightSpan | string>, highlightTyp
     ranges = buildSentenceRanges(text, nodes, sentenceHighlights);
   }
 
-  if ("highlights" in CSS) {
-    log("cs", "applyHighlights using CSS Custom Highlight API", { ranges: ranges.length });
-    const highlight = new Highlight(...ranges);
-    CSS.highlights.set(HIGHLIGHT_NAME, highlight);
+  if (highlightType === "keywords") {
+    warn("cs", "applyHighlights using embolden mode (DOM mutation)");
+    emboldenHighlightEntries();
   } else {
-    warn("cs", "applyHighlights using mark fallback (DOM mutation)");
-    ranges.forEach((range) => {
-      const mark = document.createElement("mark");
-      mark.dataset[HIGHLIGHT_NAME] = "true";
-      try {
-        range.surroundContents(mark);
-      } catch {
-        // ignore ranges that cannot be wrapped
-      }
-    });
+    if ("highlights" in CSS) {
+      log("cs", "applyHighlights using CSS Custom Highlight API", { ranges: ranges.length });
+      const highlight = new Highlight(...ranges);
+      CSS.highlights.set(HIGHLIGHT_NAME, highlight);
+    } else {
+      warn("cs", "applyHighlights using mark fallback (DOM mutation)");
+      ranges.forEach((range) => {
+        const mark = document.createElement("mark");
+        mark.dataset[HIGHLIGHT_NAME] = "true";
+        try {
+          range.surroundContents(mark);
+        } catch {
+          // ignore ranges that cannot be wrapped
+        }
+      });
+    }
   }
 
   log("cs", "applyHighlights done", { applied: highlightEntries.length });
