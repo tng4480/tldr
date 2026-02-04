@@ -10,6 +10,84 @@ export type HighlightSpan = {
   end: number;
 };
 
+const NEGATION_WORDS = new Set([
+  "no",
+  "not",
+  "never",
+  "none",
+  "neither",
+  "nor",
+  "nothing",
+  "nobody",
+  "nowhere",
+  "without",
+  "zero",
+  "cannot",
+  "can't",
+  "cant",
+  "don't",
+  "dont",
+  "doesn't",
+  "doesnt",
+  "didn't",
+  "didnt",
+  "won't",
+  "wont",
+  "isn't",
+  "isnt",
+  "aren't",
+  "arent",
+  "wasn't",
+  "wasnt",
+  "weren't",
+  "werent",
+  "shouldn't",
+  "shouldnt",
+  "couldn't",
+  "couldnt",
+  "wouldn't",
+  "wouldnt",
+]);
+
+const NUMBER_WORDS = new Set([
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+  "twenty",
+  "thirty",
+  "forty",
+  "fifty",
+  "sixty",
+  "seventy",
+  "eighty",
+  "ninety",
+  "hundred",
+  "thousand",
+  "million",
+  "billion",
+  "trillion",
+  "dozen",
+  "half",
+  "quarter",
+]);
+
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -194,6 +272,8 @@ type TokenInfo = {
   type: string;
   start: number;
   end: number;
+  numberStart?: number;
+  numberEnd?: number;
   isStopword: boolean;
   isNumber: boolean;
 };
@@ -204,7 +284,50 @@ function buildTokenIndex(text: string): { tokens: TokenInfo[]; sentences: Array<
   const doc = nlp.readDoc(text);
   const tokens: TokenInfo[] = [];
   let cursor = 0;
-  const isNumeric = (value: string) => /^[\d.,]+$/.test(value);
+
+  const getNumberSpan = (start: number, end: number): { numberStart: number; numberEnd: number } | null => {
+    if (end <= start) {
+      return null;
+    }
+
+    const raw = text.slice(start, end);
+    const firstDigitOffset = raw.search(/\d/);
+    if (firstDigitOffset < 0) {
+      return null;
+    }
+
+    let numberStart = start + firstDigitOffset;
+    if (numberStart > start) {
+      const sign = text[numberStart - 1];
+      if (sign === "-" || sign === "+") {
+        numberStart -= 1;
+      }
+    }
+
+    let lastDigitOffset = -1;
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+      if (/\d/.test(raw[index])) {
+        lastDigitOffset = index;
+        break;
+      }
+    }
+    if (lastDigitOffset < 0) {
+      return null;
+    }
+
+    const numberEnd = start + lastDigitOffset + 1;
+    if (numberEnd <= numberStart) {
+      return null;
+    }
+
+    const candidate = text.slice(numberStart, numberEnd);
+    const normalized = candidate.replace(/^[+-]/, "").replace(/,/g, "");
+    if (!/^\d+(?:\.\d+)?$/.test(normalized)) {
+      return null;
+    }
+
+    return { numberStart, numberEnd };
+  };
 
   doc.tokens().each((token: any) => {
     const value = String(token.out(its.value));
@@ -221,6 +344,8 @@ function buildTokenIndex(text: string): { tokens: TokenInfo[]; sentences: Array<
     const end = Math.min(text.length, start + value.length);
     cursor = end;
 
+    const numberSpan = getNumberSpan(start, end);
+
     tokens.push({
       value,
       normal,
@@ -228,8 +353,10 @@ function buildTokenIndex(text: string): { tokens: TokenInfo[]; sentences: Array<
       type,
       start,
       end,
+      numberStart: numberSpan?.numberStart,
+      numberEnd: numberSpan?.numberEnd,
       isStopword: STOP_WORDS.has(normal),
-      isNumber: isNumeric(value),
+      isNumber: numberSpan !== null,
     });
   });
 
@@ -243,6 +370,182 @@ function buildTokenIndex(text: string): { tokens: TokenInfo[]; sentences: Array<
   });
 
   return { tokens, sentences };
+}
+
+function findTokenEndingBefore(tokens: TokenInfo[], position: number): TokenInfo | undefined {
+  let low = 0;
+  let high = tokens.length - 1;
+  let resultIndex = -1;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const tokenEnd = tokens[mid].end;
+    if (tokenEnd <= position) {
+      resultIndex = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return resultIndex >= 0 ? tokens[resultIndex] : undefined;
+}
+
+function addLeadingNegations(
+  text: string,
+  tokens: TokenInfo[],
+  candidates: HighlightCandidate[],
+): HighlightCandidate[] {
+  if (!candidates.length || !tokens.length) {
+    return candidates;
+  }
+
+  const sorted = [...candidates].sort((a, b) => a.start - b.start);
+  const hasCoverage = (start: number, end: number) =>
+    sorted.some((chunk) => start >= chunk.start && end <= chunk.end);
+
+  const seen = new Set<string>();
+  const expanded: HighlightCandidate[] = [...candidates];
+
+  for (const candidate of sorted) {
+    const token = findTokenEndingBefore(tokens, candidate.start);
+    if (!token) {
+      continue;
+    }
+    if (token.type !== "word") {
+      continue;
+    }
+    if (!NEGATION_WORDS.has(token.normal)) {
+      continue;
+    }
+    if (hasCoverage(token.start, token.end)) {
+      continue;
+    }
+
+    const gap = text.slice(token.end, candidate.start);
+    if (gap.trim().length !== 0) {
+      continue;
+    }
+
+    const key = `${token.start}-${token.end}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    expanded.push({
+      text: text.slice(token.start, token.end),
+      start: token.start,
+      end: token.end,
+      hasProper: false,
+    });
+  }
+
+  return expanded;
+}
+
+const UNIT_WORDS = new Set([
+  "%",
+  "b",
+  "kb",
+  "mb",
+  "gb",
+  "tb",
+  "bps",
+  "kbps",
+  "mbps",
+  "gbps",
+  "ms",
+  "s",
+  "sec",
+  "secs",
+  "min",
+  "mins",
+  "h",
+  "hr",
+  "hrs",
+  "d",
+  "day",
+  "days",
+  "wk",
+  "wks",
+  "mo",
+  "mos",
+  "yr",
+  "yrs",
+  "g",
+  "kg",
+  "mg",
+  "lb",
+  "lbs",
+  "oz",
+  "m",
+  "km",
+  "cm",
+  "mm",
+  "ft",
+  "in",
+  "mi",
+  "c",
+  "f",
+]);
+
+const MAGNITUDE_SUFFIXES = new Set(["m", "k", "g", "t", "b", "\u03bc", "\u00b5", "u"]);
+
+function trimSpanToAllowed(text: string, start: number, end: number, allowed: RegExp): [number, number] | null {
+  let left = start;
+  let right = end;
+
+  while (left < right && !allowed.test(text[left])) {
+    left += 1;
+  }
+  while (right > left && !allowed.test(text[right - 1])) {
+    right -= 1;
+  }
+
+  return right > left ? [left, right] : null;
+}
+
+function isUnitLikeToken(token: TokenInfo): boolean {
+  if (token.type !== "word") {
+    return false;
+  }
+  const normalized = token.value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (UNIT_WORDS.has(normalized)) {
+    return true;
+  }
+  if (normalized.length === 1 && MAGNITUDE_SUFFIXES.has(normalized)) {
+    return true;
+  }
+  return false;
+}
+
+function isNumberWord(token: TokenInfo): boolean {
+  if (token.type !== "word") {
+    return false;
+  }
+
+  const normal = token.normal;
+  if (NUMBER_WORDS.has(normal)) {
+    return true;
+  }
+
+  if (normal.endsWith("s") && NUMBER_WORDS.has(normal.slice(0, -1))) {
+    return true;
+  }
+
+  if (normal.includes("-")) {
+    const parts = normal.split("-").filter(Boolean);
+    if (!parts.length) {
+      return false;
+    }
+    return parts.every((part) => NUMBER_WORDS.has(part) || (part.endsWith("s") && NUMBER_WORDS.has(part.slice(0, -1))));
+  }
+
+  return false;
 }
 
 function dedupeOverlappingSpans(candidates: HighlightCandidate[]): HighlightCandidate[] {
@@ -349,32 +652,98 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
 
   const secondaryHighlights: HighlightCandidate[] = [];
   const seenSecondary = new Set<string>();
-  tokens.forEach((token) => {
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
     if (token.type !== "word" && !token.isNumber) {
-      return;
+      continue;
     }
 
-    const shouldHighlightSecondary = token.isNumber || token.pos === "PROPN" || token.pos === "ADJ";
+    const isNumericLike = token.isNumber || isNumberWord(token);
+    const shouldHighlightSecondary = isNumericLike || token.pos === "PROPN" || token.pos === "ADJ";
     if (!shouldHighlightSecondary) {
-      return;
+      continue;
     }
-    if (hasCoverage(token.start, token.end)) {
-      return;
+
+    const spanStart = token.isNumber ? (token.numberStart ?? token.start) : token.start;
+    const spanEnd = token.isNumber ? (token.numberEnd ?? token.end) : token.end;
+    const trimmedSpan = token.isNumber
+      ? trimSpanToAllowed(text, spanStart, spanEnd, /[\d.,+-]/)
+      : trimSpanToAllowed(text, spanStart, spanEnd, /[\p{L}\p{N}%\u00b5\u03bc\u00b0']/u);
+    if (!trimmedSpan) {
+      continue;
     }
-    const key = `${token.start}-${token.end}`;
+
+    const [highlightStart, highlightEnd] = trimmedSpan;
+    if (hasCoverage(highlightStart, highlightEnd)) {
+      continue;
+    }
+
+    const key = `${highlightStart}-${highlightEnd}`;
     if (seenSecondary.has(key)) {
-      return;
+      continue;
     }
     seenSecondary.add(key);
     secondaryHighlights.push({
-      text: text.slice(token.start, token.end),
-      start: token.start,
-      end: token.end,
+      text: text.slice(highlightStart, highlightEnd),
+      start: highlightStart,
+      end: highlightEnd,
       hasProper: token.pos === "PROPN",
     });
-  });
 
-  return [...nounChunks, ...secondaryHighlights]
+    if (!isNumericLike) {
+      continue;
+    }
+
+    const next = tokens[index + 1];
+    if (next && isUnitLikeToken(next)) {
+      const gap = text.slice(token.end, next.start);
+      if (gap.trim().length === 0) {
+        const unitSpan = trimSpanToAllowed(text, next.start, next.end, /[\p{L}%\u00b5\u03bc\u00b0]/u);
+        if (unitSpan) {
+          const [unitStart, unitEnd] = unitSpan;
+          if (!hasCoverage(unitStart, unitEnd)) {
+            const unitKey = `${unitStart}-${unitEnd}`;
+            if (!seenSecondary.has(unitKey)) {
+              seenSecondary.add(unitKey);
+              secondaryHighlights.push({
+                text: text.slice(unitStart, unitEnd),
+                start: unitStart,
+                end: unitEnd,
+                hasProper: false,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (token.isNumber && (token.numberEnd ?? token.end) < token.end) {
+      const suffixStart = token.numberEnd ?? token.end;
+      const suffixSpan = trimSpanToAllowed(text, suffixStart, token.end, /[\p{L}%\u00b5\u03bc\u00b0]/u);
+      if (suffixSpan) {
+        const [unitStart, unitEnd] = suffixSpan;
+        const suffixText = text.slice(unitStart, unitEnd).trim().toLowerCase();
+        if (suffixText.length > 0 && (UNIT_WORDS.has(suffixText) || MAGNITUDE_SUFFIXES.has(suffixText))) {
+          if (!hasCoverage(unitStart, unitEnd)) {
+            const unitKey = `${unitStart}-${unitEnd}`;
+            if (!seenSecondary.has(unitKey)) {
+              seenSecondary.add(unitKey);
+              secondaryHighlights.push({
+                text: text.slice(unitStart, unitEnd),
+                start: unitStart,
+                end: unitEnd,
+                hasProper: false,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const expandedCandidates = addLeadingNegations(text, tokens, [...nounChunks, ...secondaryHighlights]);
+
+  return expandedCandidates
     .sort((a, b) => {
       if (a.start !== b.start) {
         return a.start - b.start;
