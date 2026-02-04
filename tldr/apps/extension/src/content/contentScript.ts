@@ -6,7 +6,7 @@ import {
   type TextNodeInfo,
 } from "@tldr/core-dom";
 import type { HighlightSpan } from "@tldr/core";
-import { splitIntoSentences } from "@tldr/core";
+import { computeSpacyStyleHighlights, splitIntoSentences, wordCount } from "@tldr/core";
 import type {
   ApplyHighlightsRequest,
   ContentConnect,
@@ -22,11 +22,13 @@ const HIGHLIGHT_NAME_SENTENCES = "tldr-highlight-sentences";
 const HIGHLIGHT_NAME_KEYWORDS = "tldr-highlight-keywords";
 const MARK_ATTR = "data-tldr-highlight";
 const POPUP_ID = "tldr-inline-popover";
+const BUBBLE_HOST_ID = "tldr-floating-bubble";
 const EMBOLDEN_ATTR = "data-tldr-embolden";
 const EMBOLDEN_CLASS = "tldr-embolden";
 const DEEMPHASIZE_CLASS = "tldr-deemphasize";
 const DEEMPHASIZE_COLOR_VAR = "--tldr-deemphasis-color";
 const BASE_COLOR_VAR = "--tldr-base-color";
+const SIGNIFICANT_WORD_COUNT = 200;
 
 type HighlightEntry = {
   sentence: string;
@@ -36,11 +38,15 @@ type HighlightEntry = {
 };
 
 let currentNodes: TextNodeInfo[] = [];
+let currentReadableText = "";
+let currentReadableWordCount = 0;
 let highlightEntries: HighlightEntry[] = [];
 let observer: MutationObserver | null = null;
 let updateTimeout: number | null = null;
 let styleInjected = false;
 let deemphasizedRoot: Element | null = null;
+let bubbleInjected = false;
+let bubbleExpanded = false;
 
 function signalContentReady() {
   // This must run only after `chrome.runtime.onMessage.addListener(...)` is registered,
@@ -64,9 +70,12 @@ function scheduleExtractionRefresh() {
 
 function refreshNodes() {
   const root = getReadableRoot(document);
-  const { nodes } = extractReadableText(root);
+  const { text, nodes } = extractReadableText(root);
   currentNodes = nodes;
-  log("cs", "refreshNodes", { nodes: currentNodes.length, root: root.tagName });
+  currentReadableText = text;
+  currentReadableWordCount = wordCount(text);
+  log("cs", "refreshNodes", { nodes: currentNodes.length, root: root.tagName, words: currentReadableWordCount });
+  updateBubbleVisibility();
 }
 
 function ensureHighlightStyles() {
@@ -97,6 +106,184 @@ function ensureHighlightStyles() {
   `;
   document.head.appendChild(style);
   styleInjected = true;
+}
+
+function ensureFloatingBubble() {
+  if (bubbleInjected) {
+    return;
+  }
+
+  if (!document.body) {
+    return;
+  }
+
+  const host = document.createElement("div");
+  host.id = BUBBLE_HOST_ID;
+  host.style.position = "fixed";
+  host.style.zIndex = "2147483647";
+  host.style.right = "18px";
+  host.style.bottom = "18px";
+  host.style.display = "none";
+  host.style.pointerEvents = "auto";
+  document.body.appendChild(host);
+
+  const shadow = host.attachShadow({ mode: "open" });
+  const style = document.createElement("style");
+  style.textContent = `
+    :host { all: initial; }
+    .wrap { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    .bubble {
+      width: 46px; height: 46px; border-radius: 9999px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: #111827;
+      color: #e2e8f0;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.22);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      user-select: none;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .bubble:active { transform: translateY(1px); }
+    .panel {
+      position: absolute;
+      right: 0;
+      bottom: 56px;
+      width: 280px;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      background: rgba(17,24,39,0.98);
+      backdrop-filter: blur(8px);
+      color: #e2e8f0;
+      box-shadow: 0 18px 46px rgba(0,0,0,0.32);
+      padding: 12px;
+      display: none;
+    }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .title { font-weight: 700; font-size: 13px; }
+    .meta { opacity: 0.7; font-size: 12px; }
+    .btnRow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    button {
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      background: rgba(30,41,59,0.9);
+      color: #e2e8f0;
+      padding: 8px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    button.primary { background: #fbbf24; color: #111827; border-color: rgba(251,191,36,0.8); font-weight: 700; }
+    button.danger { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.35); }
+  `;
+
+  const wrap = document.createElement("div");
+  wrap.className = "wrap";
+
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "TLDR reading assistant");
+
+  const header = document.createElement("div");
+  header.className = "row";
+
+  const title = document.createElement("div");
+  title.className = "title";
+  title.textContent = "TLDR";
+
+  const close = document.createElement("button");
+  close.textContent = "Close";
+  close.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setBubbleExpanded(false);
+  });
+
+  header.append(title, close);
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.id = "tldr-bubble-meta";
+  meta.textContent = "Detecting page text…";
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "btnRow";
+
+  const highlight = document.createElement("button");
+  highlight.className = "primary";
+  highlight.textContent = "Highlight key phrases";
+  highlight.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      if (!currentReadableText.trim()) {
+        refreshNodes();
+      }
+      const spans = computeSpacyStyleHighlights(currentReadableText);
+      applyHighlights(spans, "keywords");
+    } catch (error) {
+      warn("cs", "Bubble highlight failed", error);
+    }
+  });
+
+  const clear = document.createElement("button");
+  clear.className = "danger";
+  clear.textContent = "Clear highlights";
+  clear.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearHighlights();
+  });
+
+  btnRow.append(highlight, clear);
+
+  panel.append(header, meta, btnRow);
+
+  const bubble = document.createElement("button");
+  bubble.className = "bubble";
+  bubble.setAttribute("aria-label", "Open TLDR");
+  bubble.textContent = "TLDR";
+  bubble.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setBubbleExpanded(!bubbleExpanded);
+  });
+
+  wrap.append(panel, bubble);
+  shadow.append(style, wrap);
+
+  bubbleInjected = true;
+}
+
+function setBubbleExpanded(next: boolean) {
+  bubbleExpanded = next;
+  const host = document.getElementById(BUBBLE_HOST_ID);
+  const panel = host?.shadowRoot?.querySelector(".panel") as HTMLElement | null;
+  if (panel) {
+    panel.style.display = bubbleExpanded ? "block" : "none";
+  }
+}
+
+function updateBubbleVisibility() {
+  ensureFloatingBubble();
+  const host = document.getElementById(BUBBLE_HOST_ID);
+  if (!host) {
+    return;
+  }
+
+  const isSignificant = currentReadableWordCount >= SIGNIFICANT_WORD_COUNT;
+  host.style.display = isSignificant ? "block" : "none";
+  if (!isSignificant) {
+    setBubbleExpanded(false);
+  }
+
+  const meta = host.shadowRoot?.getElementById("tldr-bubble-meta");
+  if (meta) {
+    meta.textContent = isSignificant
+      ? `${currentReadableWordCount.toLocaleString()} words detected on this page.`
+      : `Needs ${SIGNIFICANT_WORD_COUNT}+ words to show.`;
+  }
 }
 
 function ensureObserver() {
@@ -572,11 +759,3 @@ refreshNodes();
 ensureObserver();
 
 signalContentReady();
-refreshNodes();
-ensureObserver();
-
-chrome.runtime.onMessage.addListener((message: ExtractRequest | ApplyHighlightsRequest) => {
-  handleMessage(message);
-});
-
-document.addEventListener("click", handleClick, { capture: true });
