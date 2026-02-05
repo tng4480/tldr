@@ -5,6 +5,7 @@ import { computeSpacyStyleHighlights, extractDateHighlights } from "@tldr/core";
 import type { ApplyHighlightsAck, AuthStatusResult, ExtractResult, LlmActionResult } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
+import { clampHighlightContrast, DEFAULT_HIGHLIGHT_CONTRAST, HIGHLIGHT_CONTRAST_KEY } from "../shared/settings";
 import "./sidepanel.css";
 
 function buildHighlights(text: string): HighlightSpan[] {
@@ -53,6 +54,7 @@ function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
   const [tabId, setTabId] = useState<number | null>(null);
+  const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
   const [pageText, setPageText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [authState, setAuthState] = useState<{
@@ -78,6 +80,7 @@ function App() {
     error: null,
   });
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
+  const contrastWriteTimeoutRef = useRef<number | null>(null);
 
   const pendingExtractRef = useRef<{
     requestId: string;
@@ -123,6 +126,36 @@ function App() {
         resolve(tabs[0]?.id ?? null);
       });
     });
+  }, []);
+
+  useEffect(() => {
+    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY], (result) => {
+      setHighlightContrast(clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]));
+    });
+
+    const handler = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+      if (areaName !== "sync") {
+        return;
+      }
+      const change = (changes as any)?.[HIGHLIGHT_CONTRAST_KEY] as chrome.storage.StorageChange | undefined;
+      if (!change) {
+        return;
+      }
+      setHighlightContrast(clampHighlightContrast(change.newValue));
+    };
+    chrome.storage.onChanged.addListener(handler);
+    return () => chrome.storage.onChanged.removeListener(handler);
+  }, []);
+
+  const handleContrastChange = useCallback((value: number) => {
+    const next = clampHighlightContrast(value);
+    setHighlightContrast(next);
+    if (contrastWriteTimeoutRef.current) {
+      window.clearTimeout(contrastWriteTimeoutRef.current);
+    }
+    contrastWriteTimeoutRef.current = window.setTimeout(() => {
+      chrome.storage.sync.set({ [HIGHLIGHT_CONTRAST_KEY]: next });
+    }, 120);
   }, []);
 
   useEffect(() => {
@@ -408,6 +441,23 @@ function App() {
           <button className="assist-ext-segment" onClick={handleKeyInfo} disabled={!authState.isAuthenticated}>
             {keyInfoState.isLoading ? "Extracting…" : "Extract key info"}
           </button>
+        </div>
+        <div className="assist-ext-field">
+          <div className="assist-ext-field-row">
+            <div className="assist-ext-field-label">Highlight contrast</div>
+            <div className="assist-ext-field-value">{highlightContrast}%</div>
+          </div>
+          <input
+            className="assist-ext-range"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={highlightContrast}
+            onChange={(event) => handleContrastChange(Number(event.currentTarget.value))}
+            aria-label="Highlight contrast"
+          />
+          <div className="assist-ext-meta">Higher values dim non-highlighted text more.</div>
         </div>
         {error ? <div className="assist-ext-error">{error}</div> : null}
         {highlightState.error ? <div className="assist-ext-error">{highlightState.error}</div> : null}

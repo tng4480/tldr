@@ -7,6 +7,7 @@ import {
 } from "@tldr/core-dom";
 import type { HighlightSpan } from "@tldr/core";
 import { computeSpacyStyleHighlights, splitIntoSentences, wordCount } from "@tldr/core";
+import { clampHighlightContrast, DEFAULT_HIGHLIGHT_CONTRAST, HIGHLIGHT_CONTRAST_KEY } from "../shared/settings";
 import type {
   ApplyHighlightsRequest,
   ContentConnect,
@@ -47,6 +48,8 @@ let styleInjected = false;
 let deemphasizedRoot: Element | null = null;
 let bubbleInjected = false;
 let bubbleExpanded = false;
+let highlightContrast = DEFAULT_HIGHLIGHT_CONTRAST;
+let storageInitialized = false;
 
 function signalContentReady() {
   // This must run only after `chrome.runtime.onMessage.addListener(...)` is registered,
@@ -377,6 +380,20 @@ function parseRgbColor(value: string): { r: number; g: number; b: number; a: num
   return { r, g, b, a };
 }
 
+function computeDeemphasisColor(base: { r: number; g: number; b: number; a: number }, strength: number) {
+  const clamped = Math.max(0, Math.min(1, strength));
+  const luma = base.r * 0.2126 + base.g * 0.7152 + base.b * 0.0722;
+  const gray = Math.round(Math.max(0, Math.min(255, luma * 0.4 + 128 * 0.6)));
+  const r = Math.round(base.r * (1 - clamped) + gray * clamped);
+  const g = Math.round(base.g * (1 - clamped) + gray * clamped);
+  const b = Math.round(base.b * (1 - clamped) + gray * clamped);
+  return `rgba(${r}, ${g}, ${b}, ${base.a})`;
+}
+
+function getContrastStrength() {
+  return clampHighlightContrast(highlightContrast) / 100;
+}
+
 function applyDeemphasis(root: Element) {
   const computed = window.getComputedStyle(root);
   const parsed = parseRgbColor(computed.color);
@@ -385,15 +402,28 @@ function applyDeemphasis(root: Element) {
   }
 
   const baseColor = `rgba(${parsed.r}, ${parsed.g}, ${parsed.b}, ${parsed.a})`;
-  const luma = parsed.r * 0.2126 + parsed.g * 0.7152 + parsed.b * 0.0722;
-  const gray = Math.round(Math.max(0, Math.min(255, luma * 0.4 + 128 * 0.6)));
-  const deemphasisColor = `rgba(${gray}, ${gray}, ${gray}, ${parsed.a})`;
-  // const deemphasisColor = `rgba(255, 105, 180, ${parsed.a})`;
+  const deemphasisColor = computeDeemphasisColor(parsed, getContrastStrength());
   root.classList.add(DEEMPHASIZE_CLASS);
   root.setAttribute("data-tldr-deemphasize", "true");
   (root as HTMLElement).style.setProperty(BASE_COLOR_VAR, baseColor);
   (root as HTMLElement).style.setProperty(DEEMPHASIZE_COLOR_VAR, deemphasisColor);
   deemphasizedRoot = root;
+}
+
+function refreshDeemphasis() {
+  if (!deemphasizedRoot) {
+    return;
+  }
+  const root = deemphasizedRoot;
+  if (!root.isConnected) {
+    deemphasizedRoot = null;
+    return;
+  }
+  const base = parseRgbColor((root as HTMLElement).style.getPropertyValue(BASE_COLOR_VAR).trim());
+  if (!base) {
+    return;
+  }
+  (root as HTMLElement).style.setProperty(DEEMPHASIZE_COLOR_VAR, computeDeemphasisColor(base, getContrastStrength()));
 }
 
 function clearDeemphasis() {
@@ -409,6 +439,29 @@ function clearDeemphasis() {
   root.removeAttribute("data-tldr-deemphasize");
   (root as HTMLElement).style.removeProperty(BASE_COLOR_VAR);
   (root as HTMLElement).style.removeProperty(DEEMPHASIZE_COLOR_VAR);
+}
+
+function ensureContrastSetting() {
+  if (storageInitialized) {
+    return;
+  }
+  storageInitialized = true;
+  chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY], (result) => {
+    highlightContrast = clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]);
+    refreshDeemphasis();
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "sync") {
+      return;
+    }
+    const change = (changes as any)?.[HIGHLIGHT_CONTRAST_KEY];
+    if (!change) {
+      return;
+    }
+    highlightContrast = clampHighlightContrast(change.newValue);
+    refreshDeemphasis();
+  });
 }
 
 function escapeRegExp(value: string) {
@@ -600,6 +653,7 @@ function applyHighlights(highlights: Array<HighlightSpan | string>, highlightTyp
   if (!highlights.length) {
     return 0;
   }
+  ensureContrastSetting();
   ensureHighlightStyles();
 
   const root = getReadableRoot(document);
@@ -806,6 +860,8 @@ chrome.runtime.onMessage.addListener((message: ExtractRequest | ApplyHighlightsR
 });
 
 document.addEventListener("click", handleClick, { capture: true });
+
+ensureContrastSetting();
 
 // These may be a bit heavier; do them after the message listener is registered so we can receive requests immediately.
 refreshNodes();

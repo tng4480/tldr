@@ -262,3 +262,36 @@ body {
   font-size: 12px;
   color: var(--assist-ext-muted);
 }
+
+.assist-ext-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--assist-ext-space-2);
+  border: 1px solid var(--assist-ext-border);
+  background: color-mix(in srgb, var(--assist-ext-surface) 70%, transparent);
+  border-radius: var(--assist-ext-radius);
+  padding: var(--assist-ext-space-3);
+}
+
+.assist-ext-field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--assist-ext-space-2);
+}
+
+.assist-ext-field-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.assist-ext-field-value {
+  font-size: 12px;
+  color: var(--assist-ext-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.assist-ext-range {
+  width: 100%;
+  accent-color: var(--assist-ext-accent);
+}
