@@ -166,6 +166,13 @@ function ensureFloatingBubble() {
       box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
       transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
     }
+    .assist-ext-bubble img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+      display: block;
+      pointer-events: none;
+    }
     .assist-ext-bubble:hover {
       box-shadow:
         0 0 0 3px color-mix(in srgb, var(--assist-ext-accent) 26%, transparent),
@@ -286,7 +293,10 @@ function ensureFloatingBubble() {
   const bubble = document.createElement("button");
   bubble.className = "assist-ext-bubble";
   bubble.setAttribute("aria-label", "Open TLDR");
-  bubble.textContent = "TLDR";
+  const bubbleIcon = document.createElement("img");
+  bubbleIcon.alt = "";
+  bubbleIcon.src = chrome.runtime.getURL("tldr.png");
+  bubble.appendChild(bubbleIcon);
   bubble.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
