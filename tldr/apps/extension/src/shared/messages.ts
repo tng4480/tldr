@@ -77,6 +77,25 @@ export type LlmActionResult = MessageBase & {
   error?: string;
 };
 
+export type AuthStatusRequest = MessageBase & {
+  type: "AuthStatusRequest";
+};
+
+export type AuthStatusResult = MessageBase & {
+  type: "AuthStatusResult";
+  isAuthenticated: boolean;
+  expiresAt?: string | null;
+  error?: string;
+};
+
+export type AuthConnectRequest = MessageBase & {
+  type: "AuthConnectRequest";
+};
+
+export type AuthClearRequest = MessageBase & {
+  type: "AuthClearRequest";
+};
+
 export type ExtensionMessage =
   | SidepanelConnect
   | ContentConnect
@@ -87,7 +106,11 @@ export type ExtensionMessage =
   | ApplyHighlightsAck
   | HighlightClicked
   | LlmActionRequest
-  | LlmActionResult;
+  | LlmActionResult
+  | AuthStatusRequest
+  | AuthStatusResult
+  | AuthConnectRequest
+  | AuthClearRequest;
 
 export function createRequestId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;

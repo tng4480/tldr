@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type {
   ApplyHighlightsAck,
   ApplyHighlightsRequest,
@@ -6,11 +8,20 @@ import type {
   ExtractRequest,
   ExtractResult,
   HighlightClicked,
+  AuthClearRequest,
+  AuthConnectRequest,
+  AuthStatusRequest,
+  AuthStatusResult,
   LlmActionRequest,
   LlmActionResult,
   SidepanelConnect,
 } from "../shared/messages";
 import { error, log, runtimeLastError, warn } from "../shared/logger";
+
+type StoredExtensionToken = {
+  token: string;
+  expiresAt: string;
+};
 
 const tabState = new Map<number, { text?: string; lastHighlight?: HighlightClicked }>();
 const readyTabs = new Set<number>();
@@ -24,6 +35,85 @@ const pendingByTab = new Map<
 
 function getApiBase(): string {
   return import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+}
+
+async function getStoredToken(): Promise<StoredExtensionToken | null> {
+  return await new Promise((resolve) => {
+    chrome.storage.local.get(["extensionToken"], (result) => {
+      const raw = (result as any)?.extensionToken as unknown;
+      if (!raw || typeof raw !== "object") {
+        resolve(null);
+        return;
+      }
+      const token = (raw as any).token;
+      const expiresAt = (raw as any).expiresAt;
+      if (typeof token !== "string" || typeof expiresAt !== "string" || !token || !expiresAt) {
+        resolve(null);
+        return;
+      }
+      resolve({ token, expiresAt });
+    });
+  });
+}
+
+async function setStoredToken(value: StoredExtensionToken): Promise<void> {
+  await new Promise<void>((resolve) => {
+    chrome.storage.local.set({ extensionToken: value }, () => resolve());
+  });
+}
+
+async function clearStoredToken(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    chrome.storage.local.remove(["extensionToken"], () => resolve());
+  });
+}
+
+function isTokenExpired(expiresAt: string): boolean {
+  const expiry = Date.parse(expiresAt);
+  if (!Number.isFinite(expiry)) {
+    return true;
+  }
+  return expiry <= Date.now() + 60_000;
+}
+
+async function fetchNewToken(): Promise<StoredExtensionToken | null> {
+  const apiBase = getApiBase();
+  try {
+    const response = await fetch(`${apiBase}/api/extension/token`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json()) as { token?: unknown; expiresAt?: unknown };
+    if (typeof data?.token !== "string" || typeof data?.expiresAt !== "string") {
+      return null;
+    }
+    return { token: data.token, expiresAt: data.expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+async function ensureExtensionToken(): Promise<StoredExtensionToken | null> {
+  const existing = await getStoredToken();
+  if (existing && !isTokenExpired(existing.expiresAt)) {
+    return existing;
+  }
+
+  if (existing) {
+    await clearStoredToken();
+  }
+
+  const fresh = await fetchNewToken();
+  if (fresh) {
+    await setStoredToken(fresh);
+    return fresh;
+  }
+
+  return null;
 }
 
 function resolveTabId(messageTabId: unknown, senderTabId: number | undefined): number | undefined {
@@ -59,6 +149,18 @@ async function injectContentScript(tabId: number): Promise<boolean> {
 }
 
 async function callLlm(request: LlmActionRequest): Promise<LlmActionResult> {
+  const token = await ensureExtensionToken();
+  if (!token) {
+    return {
+      type: "LlmActionResult",
+      requestId: request.requestId,
+      tabId: request.tabId,
+      action: request.action,
+      result: "",
+      error: "Sign in on the TLDR website to use summaries.",
+    };
+  }
+
   const apiBase = getApiBase();
   const url =
     request.action === "key_info"
@@ -75,9 +177,8 @@ async function callLlm(request: LlmActionRequest): Promise<LlmActionResult> {
     log("bg", "LLM request start", { tabId: request.tabId, action: request.action, url, bytes: request.text.length });
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token.token}` },
       body: JSON.stringify(body),
-      credentials: "include",
     });
     const data = await response.json();
     if (!response.ok) {
@@ -219,6 +320,85 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
 
   log("bg", "onMessage", { type: typed.type, senderTabId: sender.tab?.id });
+
+  if (typed.type === "AuthStatusRequest") {
+    const request = message as AuthStatusRequest;
+    getStoredToken()
+      .then((stored) => {
+        if (!stored || isTokenExpired(stored.expiresAt)) {
+          if (stored) {
+            return clearStoredToken().then(() => null);
+          }
+          return null;
+        }
+        return stored;
+      })
+      .then((stored) => {
+        sendResponse({
+          type: "AuthStatusResult",
+          requestId: request.requestId,
+          isAuthenticated: Boolean(stored),
+          expiresAt: stored?.expiresAt ?? null,
+        } satisfies AuthStatusResult);
+      })
+      .catch((e) => {
+        sendResponse({
+          type: "AuthStatusResult",
+          requestId: request.requestId,
+          isAuthenticated: false,
+          expiresAt: null,
+          error: e instanceof Error ? e.message : "Unknown error",
+        } satisfies AuthStatusResult);
+      });
+    return true;
+  }
+
+  if (typed.type === "AuthConnectRequest") {
+    const request = message as AuthConnectRequest;
+    ensureExtensionToken()
+      .then((token) => {
+        sendResponse({
+          type: "AuthStatusResult",
+          requestId: request.requestId,
+          isAuthenticated: Boolean(token),
+          expiresAt: token?.expiresAt ?? null,
+          error: token ? undefined : "Not signed in.",
+        } satisfies AuthStatusResult);
+      })
+      .catch((e) => {
+        sendResponse({
+          type: "AuthStatusResult",
+          requestId: request.requestId,
+          isAuthenticated: false,
+          expiresAt: null,
+          error: e instanceof Error ? e.message : "Unknown error",
+        } satisfies AuthStatusResult);
+      });
+    return true;
+  }
+
+  if (typed.type === "AuthClearRequest") {
+    const request = message as AuthClearRequest;
+    clearStoredToken()
+      .then(() => {
+        sendResponse({
+          type: "AuthStatusResult",
+          requestId: request.requestId,
+          isAuthenticated: false,
+          expiresAt: null,
+        } satisfies AuthStatusResult);
+      })
+      .catch((e) => {
+        sendResponse({
+          type: "AuthStatusResult",
+          requestId: request.requestId,
+          isAuthenticated: false,
+          expiresAt: null,
+          error: e instanceof Error ? e.message : "Unknown error",
+        } satisfies AuthStatusResult);
+      });
+    return true;
+  }
 
   if (typed.type === "SidepanelConnect") {
     const connect = message as SidepanelConnect;

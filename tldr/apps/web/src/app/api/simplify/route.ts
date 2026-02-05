@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { authenticateExtensionToken } from "@/lib/extensionAuth";
 import { computeStableHash } from "@tldr/core";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateEntitlements } from "@/lib/entitlements";
@@ -13,10 +14,15 @@ const ALLOWED_TONES: SimplifyTone[] = ["preserve", "descriptive", "bullets"];
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
-  const userId = session?.user?.id;
+  let userId = session?.user?.id;
 
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+    const tokenAuth = await authenticateExtensionToken(request);
+    if (tokenAuth.ok) {
+      userId = tokenAuth.userId;
+    } else {
+      return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+    }
   }
 
   const body = await request.json();

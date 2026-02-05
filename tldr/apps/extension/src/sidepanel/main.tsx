@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { HighlightSpan } from "@tldr/core";
 import { computeSpacyStyleHighlights, extractDateHighlights } from "@tldr/core";
-import type { ApplyHighlightsAck, ExtractResult, LlmActionResult } from "../shared/messages";
+import type { ApplyHighlightsAck, AuthStatusResult, ExtractResult, LlmActionResult } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
 
@@ -21,12 +21,25 @@ const cardStyles: React.CSSProperties = {
 };
 
 function App() {
+  const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+
   const [tabId, setTabId] = useState<number | null>(null);
   const [firstSentence, setFirstSentence] = useState<string>("");
   const [pageText, setPageText] = useState<string>("");
   const [sentences, setSentences] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authState, setAuthState] = useState<{
+    isLoading: boolean;
+    isAuthenticated: boolean;
+    expiresAt: string | null;
+    error: string | null;
+  }>({
+    isLoading: true,
+    isAuthenticated: false,
+    expiresAt: null,
+    error: null,
+  });
   const [highlightState, setHighlightState] = useState<{ isLoading: boolean; error: string | null; count: number | null }>(
     {
       isLoading: false,
@@ -138,6 +151,29 @@ function App() {
   }, []);
 
   useEffect(() => {
+    setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
+    chrome.runtime.sendMessage(
+      {
+        type: "AuthStatusRequest",
+        requestId: createRequestId("auth-status"),
+      },
+      (response: AuthStatusResult | undefined) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          setAuthState({ isLoading: false, isAuthenticated: false, expiresAt: null, error: err.message ?? "Unknown error" });
+          return;
+        }
+        setAuthState({
+          isLoading: false,
+          isAuthenticated: Boolean(response?.isAuthenticated),
+          expiresAt: response?.expiresAt ?? null,
+          error: response?.error ?? null,
+        });
+      },
+    );
+  }, []);
+
+  useEffect(() => {
     // Temporarily keep the sidepanel focused on the "Analyze page" flow only.
     // Other flows (highlighting, click actions, LLM actions) are commented out below.
     const handler = (message: ExtractResult | ApplyHighlightsAck | LlmActionResult) => {
@@ -169,6 +205,56 @@ function App() {
 
     chrome.runtime.onMessage.addListener(handler);
     return () => chrome.runtime.onMessage.removeListener(handler);
+  }, []);
+
+  const handleSignIn = useCallback(() => {
+    chrome.tabs.create({ url: `${apiBase}/api/auth/signin` }, () => runtimeLastError("sp", "chrome.tabs.create sign-in"));
+  }, [apiBase]);
+
+  const handleConnect = useCallback(() => {
+    setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
+    chrome.runtime.sendMessage(
+      {
+        type: "AuthConnectRequest",
+        requestId: createRequestId("auth-connect"),
+      },
+      (response: AuthStatusResult | undefined) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          setAuthState({ isLoading: false, isAuthenticated: false, expiresAt: null, error: err.message ?? "Unknown error" });
+          return;
+        }
+        setAuthState({
+          isLoading: false,
+          isAuthenticated: Boolean(response?.isAuthenticated),
+          expiresAt: response?.expiresAt ?? null,
+          error: response?.error ?? null,
+        });
+      },
+    );
+  }, []);
+
+  const handleDisconnect = useCallback(() => {
+    setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
+    chrome.runtime.sendMessage(
+      {
+        type: "AuthClearRequest",
+        requestId: createRequestId("auth-clear"),
+      },
+      (response: AuthStatusResult | undefined) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          setAuthState({ isLoading: false, isAuthenticated: false, expiresAt: null, error: err.message ?? "Unknown error" });
+          return;
+        }
+        setAuthState({
+          isLoading: false,
+          isAuthenticated: Boolean(response?.isAuthenticated),
+          expiresAt: response?.expiresAt ?? null,
+          error: response?.error ?? null,
+        });
+      },
+    );
   }, []);
 
   const handleAnalyze = useCallback(() => {
@@ -232,6 +318,10 @@ function App() {
       setKeyInfoState({ isLoading: false, error: "No active tab." });
       return;
     }
+    if (!authState.isAuthenticated) {
+      setKeyInfoState({ isLoading: false, error: "Sign in to use key info." });
+      return;
+    }
     if (!pageText.trim()) {
       setKeyInfoState({ isLoading: false, error: "Analyze the page first." });
       return;
@@ -245,13 +335,60 @@ function App() {
       action: "key_info",
       text: pageText,
     });
-  }, [pageText, tabId]);
+  }, [authState.isAuthenticated, pageText, tabId]);
 
   return (
     <div style={panelStyles}>
       <div style={{ ...cardStyles, display: "flex", flexDirection: "column", gap: "10px" }}>
         <h2 style={{ margin: 0, fontSize: "18px" }}>TLDR Reading Assistant</h2>
         <p style={{ margin: 0, opacity: 0.7 }}>Analyze the current page, highlight keywords, or extract key info.</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          {authState.isAuthenticated ? (
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ opacity: 0.7, fontSize: "12px" }}>
+                Connected{authState.expiresAt ? ` (expires ${new Date(authState.expiresAt).toLocaleDateString()})` : ""}
+              </div>
+              <button
+                onClick={handleDisconnect}
+                disabled={authState.isLoading}
+                style={{
+                  background: "rgba(239,68,68,0.15)",
+                  border: "1px solid rgba(239,68,68,0.35)",
+                  color: "#fecaca",
+                  padding: "6px 10px",
+                  borderRadius: "8px",
+                }}
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ opacity: 0.7, fontSize: "12px" }}>Not connected (highlights only).</div>
+              <button
+                onClick={handleSignIn}
+                disabled={authState.isLoading}
+                style={{ background: "#38bdf8", border: "none", color: "#0f172a", padding: "6px 10px", borderRadius: "8px" }}
+              >
+                Sign in
+              </button>
+              <button
+                onClick={handleConnect}
+                disabled={authState.isLoading}
+                style={{
+                  background: "rgba(148,163,184,0.12)",
+                  border: "1px solid rgba(148,163,184,0.25)",
+                  color: "#e2e8f0",
+                  padding: "6px 10px",
+                  borderRadius: "8px",
+                }}
+              >
+                Connect extension
+              </button>
+            </div>
+          )}
+          {authState.error ? <div style={{ color: "#fca5a5", fontSize: "12px" }}>{authState.error}</div> : null}
+        </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button
             onClick={handleAnalyze}
@@ -266,7 +403,7 @@ function App() {
             {highlightState.isLoading ? "Highlighting…" : "Highlight keywords"}
           </button>
           <button
-            onClick={handleKeyInfo}
+            onClick={handleKeyInfo} disabled={!authState.isAuthenticated}
             style={{ background: "#a78bfa", border: "none", color: "#111827", padding: "8px 12px", borderRadius: "8px" }}
           >
             {keyInfoState.isLoading ? "Extracting…" : "Extract key info"}
