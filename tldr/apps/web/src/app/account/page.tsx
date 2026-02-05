@@ -102,9 +102,9 @@ export default function AccountPage() {
     return (
       <div className="flex min-h-screen flex-col bg-background">
         <SiteHeader />
-        <main className="mx-auto w-full max-w-6xl px-6 py-16">
+        <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-border/60 border-t-transparent" />
             Loading session…
           </div>
         </main>
@@ -116,7 +116,7 @@ export default function AccountPage() {
     return (
       <div className="flex min-h-screen flex-col bg-background">
         <SiteHeader />
-        <main className="mx-auto w-full max-w-6xl px-6 py-16">
+        <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
           <Alert>
             <AlertTitle>Sign in required</AlertTitle>
             <AlertDescription>
@@ -131,7 +131,7 @@ export default function AccountPage() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-6xl px-6 py-16">
+      <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <h1 className="text-2xl font-semibold text-foreground">Your account</h1>
@@ -147,7 +147,7 @@ export default function AccountPage() {
           ) : null}
           {loading ? (
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-border/60 border-t-transparent" />
               Loading account details…
             </div>
           ) : profile ? (

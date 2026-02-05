@@ -63,14 +63,14 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background via-background to-muted/40">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-6xl px-6 py-16">
+      <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
         <div className="flex flex-col items-center gap-6 text-center">
           <Badge variant="secondary" className="text-sm">
             14-day trial included
           </Badge>
-          <h1 className="text-3xl font-semibold text-slate-900">
+          <h1 className="text-3xl font-semibold text-foreground">
             Pricing that keeps reading simple.
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -90,14 +90,14 @@ export default function PricingPage() {
                   <CardTitle>{tier.name}</CardTitle>
                   {tier.tier !== "free" ? <Badge>Popular</Badge> : null}
                 </div>
-                <div className="text-3xl font-semibold text-slate-900">
+                <div className="text-3xl font-semibold text-foreground">
                   {tier.price}
                   <span className="text-sm font-normal text-muted-foreground">/month</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{tier.description}</p>
               </CardHeader>
               <CardContent className="space-y-4">
-                <ul className="space-y-2 text-sm text-slate-700">
+                <ul className="space-y-2 text-sm text-foreground/90">
                   {tier.features.map((feature) => (
                     <li key={feature} className="flex items-start gap-2">
                       <span className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />

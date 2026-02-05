@@ -14,10 +14,10 @@ If, at any time, the Recipient is unable to comply due to unforeseen circumstanc
 
 export default function HardTextExamplePage() {
   return (
-    <div className="flex min-h-screen flex-col gap-10 bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background via-background to-muted/40">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-6xl px-6 pb-16">
-        <div className="space-y-8">
+      <main className="mx-auto w-full max-w-6xl px-4 pb-20 pt-10 sm:px-6">
+        <div className="space-y-10">
           <Card>
             <CardHeader>
               <CardTitle className="text-2xl">Hard-to-read example text</CardTitle>
@@ -36,8 +36,8 @@ export default function HardTextExamplePage() {
                 </Button>
               </div>
               <Separator />
-              <div className="rounded-lg border border-slate-200 bg-white p-4">
-                <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800">
+              <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
                   {HARD_TEXT}
                 </pre>
               </div>
@@ -52,4 +52,3 @@ export default function HardTextExamplePage() {
     </div>
   );
 }
-

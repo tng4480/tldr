@@ -248,18 +248,18 @@ export default function HomePage() {
           parts.push(normalizedText.slice(cursor, start));
         }
         const spanText = normalizedText.slice(start, end);
-        parts.push(
-          <span
-            key={`${sentenceStart}-${index}-${span.kind}`}
-            className={
-              span.kind === "date"
-                ? "rounded bg-emerald-100 px-1 text-emerald-900"
-                : "rounded bg-violet-100 px-1 text-violet-900"
-            }
-          >
-            {spanText}
-          </span>,
-        );
+          parts.push(
+            <span
+              key={`${sentenceStart}-${index}-${span.kind}`}
+              className={
+                span.kind === "date"
+                  ? "rounded-md bg-emerald-500/15 px-1 text-emerald-800 ring-1 ring-emerald-500/20 dark:text-emerald-200"
+                  : "rounded-md bg-violet-500/15 px-1 text-violet-800 ring-1 ring-violet-500/20 dark:text-violet-200"
+              }
+            >
+              {spanText}
+            </span>,
+          );
         cursor = end;
       });
       if (cursor < sentenceEnd) {
@@ -345,13 +345,13 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col gap-10 bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background via-background to-muted/40">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-6xl px-6 pb-16">
-        <div className="space-y-8">
-          <Card>
+      <main className="mx-auto w-full max-w-6xl px-4 pb-20 pt-10 sm:px-6">
+        <div className="space-y-10">
+          <Card className="overflow-hidden">
             <CardHeader>
-              <CardTitle className="text-2xl">Simplify long reads with confidence.</CardTitle>
+              <CardTitle className="text-3xl tracking-tight sm:text-4xl">Simplify long reads with confidence.</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Paste text, see instant readability insights, and opt in to AI-powered
                 simplification per paragraph. By default, everything stays on your device.
@@ -365,7 +365,7 @@ export default function HomePage() {
                   placeholder="Drop in an article, policy, or study notes."
                   value={text}
                   onChange={(event) => setText(event.currentTarget.value)}
-                  className="min-h-[180px]"
+                  className="min-h-[220px] text-base leading-relaxed"
                 />
               </div>
               <div className="flex flex-wrap items-end justify-between gap-4">
@@ -457,13 +457,15 @@ export default function HomePage() {
               </CardHeader>
               <CardContent>
                 {sentenceRanges.length ? (
-                  <p className="text-sm leading-relaxed text-slate-800">
+                  <p className="text-sm leading-relaxed text-foreground/90">
                     {sentenceRanges.map((sentenceRange, index) => {
                       const content = renderSentence(sentenceRange.sentence, sentenceRange.start);
                       return (
                         <span key={`${sentenceRange.start}-${sentenceRange.end}`}>
                           {hardSentences[index] ? (
-                            <mark className="rounded bg-amber-100 px-1 text-amber-900">{content}</mark>
+                            <mark className="rounded-md bg-amber-500/15 px-1 text-amber-900 dark:text-amber-200">
+                              {content}
+                            </mark>
                           ) : (
                             content
                           )}{" "}
@@ -522,18 +524,18 @@ export default function HomePage() {
                 <p className="text-sm font-medium text-red-600">{wholeTextState.error}</p>
               ) : null}
               {wholeTextResult ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-semibold text-slate-700">Key information</p>
-                  <div className="mt-3 space-y-2 text-sm text-slate-700">
+                <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                  <p className="text-sm font-semibold text-foreground">Key information</p>
+                  <div className="mt-3 space-y-2 text-sm text-foreground/90">
                     {keyInfoPayload
                       ? KEY_INFO_HEADINGS.map((heading) => {
                           const items = keyInfoPayload.sections[heading] ?? [];
                           return (
                             <div key={heading}>
-                              <p className="pt-2 font-semibold text-slate-800">{heading}</p>
+                              <p className="pt-2 font-semibold text-foreground">{heading}</p>
                               <ul className="mt-2 space-y-1 pl-4">
                                 {(items.length ? items : ["None"]).map((item, itemIndex) => (
-                                  <li key={`${heading}-${itemIndex}`} className="text-slate-700">
+                                  <li key={`${heading}-${itemIndex}`} className="text-foreground/90">
                                     {item}
                                   </li>
                                 ))}
@@ -542,26 +544,26 @@ export default function HomePage() {
                           );
                         })
                       : wholeTextLines.map((line, index) => {
-                          const isHeading = /:$/.test(line) && !/^[\-•]\s*/.test(line);
+                          const isHeading = /:$/.test(line) && !/^[\-\u2022]\s*/.test(line);
                           if (isHeading) {
                             return (
-                              <p key={`heading-${index}`} className="pt-2 font-semibold text-slate-800">
+                              <p key={`heading-${index}`} className="pt-2 font-semibold text-foreground">
                                 {line}
                               </p>
                             );
                           }
-                          const cleaned = line.replace(/^[\-•]\s*/, "");
+                          const cleaned = line.replace(/^[\-\u2022]\s*/, "");
                           return (
                             <div key={`bullet-${index}`} className="flex gap-2">
-                              <span className="text-slate-400">•</span>
+                              <span className="text-muted-foreground">•</span>
                               <p className="flex-1">{cleaned}</p>
                             </div>
                           );
                         })}
                   </div>
                   {keyInfoPayload?.events?.length ? (
-                    <div className="mt-4 border-t border-slate-200 pt-3">
-                      <p className="text-sm font-semibold text-slate-700">Add to Google Calendar</p>
+                    <div className="mt-4 border-t border-border/60 pt-3">
+                      <p className="text-sm font-semibold text-foreground">Add to Google Calendar</p>
                       <ul className="mt-2 space-y-1 pl-4 text-sm">
                         {keyInfoPayload.events.map((event, index) => {
                           const calendarUrl =
@@ -610,10 +612,10 @@ export default function HomePage() {
                   {paragraphs.map((paragraph, index) => {
                     const isLoading = simplifyState.loadingIndex === index;
                     return (
-                      <Card key={`${index}-${paragraph.slice(0, 12)}`} className="border border-slate-200">
+                      <Card key={`${index}-${paragraph.slice(0, 12)}`} className="border border-border/60">
                         <CardContent className="space-y-3 pt-6">
-                          <p className="text-sm font-semibold text-slate-700">Paragraph {index + 1}</p>
-                          <p className="text-sm text-slate-700">{paragraph}</p>
+                          <p className="text-sm font-semibold text-foreground">Paragraph {index + 1}</p>
+                          <p className="text-sm text-foreground/90">{paragraph}</p>
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <Button onClick={() => handleSimplify(paragraph, index)} disabled={isLoading}>
                               {isLoading ? (
@@ -630,8 +632,8 @@ export default function HomePage() {
                             ) : null}
                           </div>
                           {simplifiedMap[index] ? (
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                              <p className="text-sm font-semibold text-slate-700">Simplified copy</p>
+                            <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                              <p className="text-sm font-semibold text-foreground">Simplified copy</p>
                               {simplifiedMap[index]
                                 .split(/\n\s*\n+/)
                                 .map((para) => para.trim())
@@ -639,7 +641,7 @@ export default function HomePage() {
                                 .map((para, paraIndex) => (
                                   <p
                                     key={`simplified-${index}-${paraIndex}`}
-                                    className="mt-2 text-sm text-slate-700 first:mt-3 whitespace-pre-wrap"
+                                    className="mt-2 whitespace-pre-wrap text-sm text-foreground/90 first:mt-3"
                                   >
                                     {para}
                                   </p>
