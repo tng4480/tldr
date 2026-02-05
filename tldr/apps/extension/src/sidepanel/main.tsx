@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { HighlightSpan } from "@tldr/core";
 import { computeSpacyStyleHighlights, extractDateHighlights } from "@tldr/core";
@@ -7,14 +7,53 @@ import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
 import "./sidepanel.css";
 
+function buildHighlights(text: string): HighlightSpan[] {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const highlightSpans = computeSpacyStyleHighlights(trimmed);
+  const dateTerms = extractDateHighlights(trimmed, 24);
+
+  const dateSpans: HighlightSpan[] = [];
+  if (dateTerms.length) {
+    const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    dateTerms.forEach((term) => {
+      const regex = new RegExp(escapeRegExp(term), "gi");
+      let match: RegExpExecArray | null = regex.exec(trimmed);
+      while (match) {
+        dateSpans.push({
+          text: match[0],
+          start: match.index,
+          end: match.index + match[0].length,
+        });
+        match = regex.exec(trimmed);
+      }
+    });
+  }
+
+  if (!highlightSpans.length && !dateSpans.length) {
+    return [];
+  }
+
+  const overlaps = (span: HighlightSpan) =>
+    highlightSpans.some((highlight) => span.start < highlight.end && span.end > highlight.start);
+  const filteredDates = dateSpans.filter((span) => !overlaps(span));
+
+  return [...highlightSpans, ...filteredDates].sort((a, b) => {
+    if (a.start !== b.start) {
+      return a.start - b.start;
+    }
+    return b.end - b.start - (a.end - a.start);
+  });
+}
+
 function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
   const [tabId, setTabId] = useState<number | null>(null);
-  const [firstSentence, setFirstSentence] = useState<string>("");
   const [pageText, setPageText] = useState<string>("");
-  const [sentences, setSentences] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authState, setAuthState] = useState<{
     isLoading: boolean;
@@ -40,44 +79,13 @@ function App() {
   });
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
 
-  const highlightSpans = useMemo(() => computeSpacyStyleHighlights(pageText), [pageText]);
-  const dateTerms = useMemo(() => extractDateHighlights(pageText, 24), [pageText]);
-
-  const dateSpans = useMemo(() => {
-    if (!dateTerms.length || !pageText.trim()) {
-      return [];
-    }
-    const spans: HighlightSpan[] = [];
-    const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    dateTerms.forEach((term) => {
-      const regex = new RegExp(escapeRegExp(term), "gi");
-      let match: RegExpExecArray | null = regex.exec(pageText);
-      while (match) {
-        spans.push({
-          text: match[0],
-          start: match.index,
-          end: match.index + match[0].length,
-        });
-        match = regex.exec(pageText);
-      }
-    });
-    return spans;
-  }, [dateTerms, pageText]);
-
-  const combinedHighlights = useMemo(() => {
-    if (!highlightSpans.length && !dateSpans.length) {
-      return [];
-    }
-    const overlaps = (span: HighlightSpan) =>
-      highlightSpans.some((highlight) => span.start < highlight.end && span.end > highlight.start);
-    const filteredDates = dateSpans.filter((span) => !overlaps(span));
-    return [...highlightSpans, ...filteredDates].sort((a, b) => {
-      if (a.start !== b.start) {
-        return a.start - b.start;
-      }
-      return b.end - b.start - (a.end - a.start);
-    });
-  }, [dateSpans, highlightSpans]);
+  const pendingExtractRef = useRef<{
+    requestId: string;
+    tabId: number;
+    resolve: (result: ExtractResult) => void;
+    reject: (error: Error) => void;
+    timeoutId: number;
+  } | null>(null);
 
   const keyInfoPayload = useMemo(() => {
     try {
@@ -161,20 +169,21 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Temporarily keep the sidepanel focused on the "Analyze page" flow only.
-    // Other flows (highlighting, click actions, LLM actions) are commented out below.
     const handler = (message: ExtractResult | ApplyHighlightsAck | LlmActionResult) => {
       if (!message?.type) {
         return;
       }
       log("sp", "onMessage", { type: message.type, tabId: (message as any).tabId, requestId: (message as any).requestId });
       if (message.type === "ExtractResult") {
-        setIsLoading(false);
         setError(message.error ?? null);
-        const first = message.sentences?.find((s) => s.trim().length > 0) ?? "";
-        setFirstSentence(first);
         setPageText(message.text ?? "");
-        setSentences(message.sentences ?? []);
+
+        const pending = pendingExtractRef.current;
+        if (pending && pending.requestId === message.requestId && pending.tabId === message.tabId) {
+          window.clearTimeout(pending.timeoutId);
+          pendingExtractRef.current = null;
+          pending.resolve(message);
+        }
       }
       if (message.type === "ApplyHighlightsAck") {
         setHighlightState((prev) => ({
@@ -244,85 +253,115 @@ function App() {
     );
   }, []);
 
-  const handleAnalyze = useCallback(() => {
+  const requestExtract = useCallback((activeTabId: number): Promise<ExtractResult> => {
+    if (pendingExtractRef.current) {
+      pendingExtractRef.current.reject(new Error("Canceled by a newer request."));
+      window.clearTimeout(pendingExtractRef.current.timeoutId);
+      pendingExtractRef.current = null;
+    }
+
+    const requestId = createRequestId("extract");
+    return new Promise<ExtractResult>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        if (pendingExtractRef.current?.requestId === requestId) {
+          pendingExtractRef.current = null;
+        }
+        reject(new Error("Timed out extracting page text."));
+      }, 8000);
+
+      pendingExtractRef.current = { requestId, tabId: activeTabId, resolve, reject, timeoutId };
+      setError(null);
+      setPageText("");
+      chrome.runtime.sendMessage({
+        type: "ExtractRequest",
+        requestId,
+        tabId: activeTabId,
+      });
+    });
+  }, []);
+
+  const handleHighlightKeywords = useCallback(() => {
     void (async () => {
       const activeId = await getActiveTabId();
       if (activeId === null) {
-        setError("No active tab.");
+        setHighlightState({ isLoading: false, error: "No active tab.", count: null });
         return;
       }
       setTabId(activeId);
-      setIsLoading(true);
-      setError(null);
-      setFirstSentence("");
-      setPageText("");
-      setSentences([]);
-      setHighlightState({ isLoading: false, error: null, count: null });
-      setKeyInfoState({ isLoading: false, error: null });
-      setKeyInfoResult("");
-      log("sp", "Analyze clicked", { tabId: activeId });
-      // chrome.runtime.sendMessage(
-      //   {
-      //     type: "ExtractRequest",
-      //     requestId: createRequestId("extract"),
-      //     tabId: activeId,
-      //   },
-      //   () => runtimeLastError("sp", "ExtractRequest sendMessage"),
-      // );
-      chrome.runtime.sendMessage({
-        type: "ExtractRequest",
-        requestId: createRequestId("extract"),
-        tabId: activeId,
-      });
-    })();
-  }, [getActiveTabId]);
+      setHighlightState({ isLoading: true, error: null, count: null });
 
-  const handleHighlightKeywords = useCallback(() => {
-    if (!tabId) {
-      setHighlightState({ isLoading: false, error: "No active tab.", count: null });
-      return;
-    }
-    if (!pageText.trim()) {
-      setHighlightState({ isLoading: false, error: "Analyze the page first.", count: null });
-      return;
-    }
-    if (!combinedHighlights.length) {
-      setHighlightState({ isLoading: false, error: "No highlight terms found.", count: null });
-      return;
-    }
-    setHighlightState({ isLoading: true, error: null, count: null });
-    chrome.runtime.sendMessage({
-      type: "ApplyHighlightsRequest",
-      requestId: createRequestId("highlight-terms"),
-      tabId,
-      highlights: combinedHighlights,
-      highlightType: "keywords",
-    });
-  }, [combinedHighlights, pageText, tabId]);
+      try {
+        const extract = await requestExtract(activeId);
+        if (extract.error) {
+          setHighlightState({ isLoading: false, error: extract.error, count: null });
+          return;
+        }
+
+        const highlights = buildHighlights(extract.text ?? "");
+        if (!highlights.length) {
+          setHighlightState({ isLoading: false, error: "No highlight terms found.", count: null });
+          return;
+        }
+
+        chrome.runtime.sendMessage({
+          type: "ApplyHighlightsRequest",
+          requestId: createRequestId("highlight-terms"),
+          tabId: activeId,
+          highlights,
+          highlightType: "keywords",
+        });
+      } catch (err) {
+        setHighlightState({
+          isLoading: false,
+          error: err instanceof Error ? err.message : "Unable to extract page text.",
+          count: null,
+        });
+      }
+    })();
+  }, [getActiveTabId, requestExtract]);
 
   const handleKeyInfo = useCallback(() => {
-    if (!tabId) {
-      setKeyInfoState({ isLoading: false, error: "No active tab." });
-      return;
-    }
-    if (!authState.isAuthenticated) {
-      setKeyInfoState({ isLoading: false, error: "Sign in to use key info." });
-      return;
-    }
-    if (!pageText.trim()) {
-      setKeyInfoState({ isLoading: false, error: "Analyze the page first." });
-      return;
-    }
-    setKeyInfoState({ isLoading: true, error: null });
-    setKeyInfoResult("");
-    chrome.runtime.sendMessage({
-      type: "LlmActionRequest",
-      requestId: createRequestId("key-info"),
-      tabId,
-      action: "key_info",
-      text: pageText,
-    });
-  }, [authState.isAuthenticated, pageText, tabId]);
+    void (async () => {
+      const activeId = await getActiveTabId();
+      if (activeId === null) {
+        setKeyInfoState({ isLoading: false, error: "No active tab." });
+        return;
+      }
+      setTabId(activeId);
+      if (!authState.isAuthenticated) {
+        setKeyInfoState({ isLoading: false, error: "Sign in to use key info." });
+        return;
+      }
+
+      setKeyInfoState({ isLoading: true, error: null });
+      setKeyInfoResult("");
+
+      try {
+        const extract = await requestExtract(activeId);
+        if (extract.error) {
+          setKeyInfoState({ isLoading: false, error: extract.error });
+          return;
+        }
+        const text = extract.text ?? "";
+        if (!text.trim()) {
+          setKeyInfoState({ isLoading: false, error: "No readable text found on this page." });
+          return;
+        }
+        chrome.runtime.sendMessage({
+          type: "LlmActionRequest",
+          requestId: createRequestId("key-info"),
+          tabId: activeId,
+          action: "key_info",
+          text,
+        });
+      } catch (err) {
+        setKeyInfoState({
+          isLoading: false,
+          error: err instanceof Error ? err.message : "Unable to extract page text.",
+        });
+      }
+    })();
+  }, [authState.isAuthenticated, getActiveTabId, requestExtract]);
 
   return (
     <div className="assist-ext-shell">
@@ -363,9 +402,6 @@ function App() {
       <section className="assist-ext-section">
         <div className="assist-ext-section-title">Actions</div>
         <div className="assist-ext-segmented" role="group" aria-label="Page actions">
-          <button className="assist-ext-segment" onClick={handleAnalyze}>
-            Analyze page
-          </button>
           <button className="assist-ext-segment" onClick={handleHighlightKeywords}>
             {highlightState.isLoading ? "Highlighting…" : "Highlight keywords"}
           </button>
@@ -435,17 +471,6 @@ function App() {
         {keyInfoState.error ? <div className="assist-ext-error">{keyInfoState.error}</div> : null}
       </section>
 
-      <section className="assist-ext-section">
-        <div className="assist-ext-section-title">Page data</div>
-        {isLoading ? (
-          <div className="assist-ext-status">Analyzing…</div>
-        ) : firstSentence ? (
-          <div style={{ whiteSpace: "pre-wrap" }}>{firstSentence}</div>
-        ) : (
-          <div className="assist-ext-status">No page data yet.</div>
-        )}
-        {sentences.length ? <div className="assist-ext-meta">{sentences.length} sentences detected.</div> : null}
-      </section>
     </div>
   );
 }

@@ -153,7 +153,7 @@ function ensureFloatingBubble() {
     .assist-ext-bubble {
       width: 36px;
       height: 36px;
-      border-radius: 4px;
+      border-radius: 12px;
       border: 1px solid var(--assist-ext-border);
       background: var(--assist-ext-bg);
       color: var(--assist-ext-text);
@@ -163,31 +163,58 @@ function ensureFloatingBubble() {
       user-select: none;
       font-weight: 600;
       font-size: 12px;
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+    }
+    .assist-ext-bubble:hover {
+      box-shadow:
+        0 0 0 3px color-mix(in srgb, var(--assist-ext-accent) 26%, transparent),
+        0 16px 34px rgba(0, 0, 0, 0.18);
+    }
+    .assist-ext-bubble:active {
+      transform: translateY(1px);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 10px 22px rgba(0, 0, 0, 0.16);
     }
     .assist-ext-panel {
       position: absolute;
       right: 0;
       bottom: 44px;
       width: 280px;
-      border-radius: 4px;
+      border-radius: 16px;
       border: 1px solid var(--assist-ext-border);
       background: var(--assist-ext-bg);
       color: var(--assist-ext-text);
       padding: 12px;
       display: none;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
     }
     .assist-ext-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .assist-ext-title { font-weight: 600; font-size: 13px; }
     .assist-ext-meta { color: var(--assist-ext-muted); font-size: 12px; }
     .assist-ext-btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .assist-ext-button {
-      border-radius: 4px;
+      border-radius: 12px;
       border: 1px solid var(--assist-ext-border);
       background: transparent;
       color: var(--assist-ext-text);
       padding: 6px 8px;
       font-size: 12px;
       cursor: pointer;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.10);
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+    }
+    .assist-ext-button:hover {
+      box-shadow:
+        0 0 0 3px color-mix(in srgb, var(--assist-ext-accent) 26%, transparent),
+        0 12px 26px rgba(0, 0, 0, 0.14);
+    }
+    .assist-ext-button:active {
+      transform: translateY(1px);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 6px 14px rgba(0, 0, 0, 0.12);
     }
     .assist-ext-button--primary { border-color: var(--assist-ext-accent); color: var(--assist-ext-accent); font-weight: 600; }
   `;
