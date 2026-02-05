@@ -131,68 +131,84 @@ function ensureFloatingBubble() {
   const style = document.createElement("style");
   style.textContent = `
     :host { all: initial; }
-    .wrap { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
-    .bubble {
-      width: 46px; height: 46px; border-radius: 9999px;
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      background: #111827;
-      color: #e2e8f0;
-      box-shadow: 0 12px 30px rgba(0,0,0,0.22);
+    :host {
+      --assist-ext-bg: #f8f9fa;
+      --assist-ext-border: #e9ecef;
+      --assist-ext-text: #212529;
+      --assist-ext-muted: #6c757d;
+      --assist-ext-accent: #007aff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :host {
+        --assist-ext-bg: #212529;
+        --assist-ext-border: #343a40;
+        --assist-ext-text: #f8f9fa;
+        --assist-ext-muted: #adb5bd;
+      }
+    }
+    .assist-ext-wrap {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--assist-ext-text);
+    }
+    .assist-ext-bubble {
+      width: 36px;
+      height: 36px;
+      border-radius: 4px;
+      border: 1px solid var(--assist-ext-border);
+      background: var(--assist-ext-bg);
+      color: var(--assist-ext-text);
       cursor: pointer;
       display: grid;
       place-items: center;
       user-select: none;
-      font-weight: 700;
-      letter-spacing: 0.02em;
+      font-weight: 600;
+      font-size: 12px;
     }
-    .bubble:active { transform: translateY(1px); }
-    .panel {
+    .assist-ext-panel {
       position: absolute;
       right: 0;
-      bottom: 56px;
+      bottom: 44px;
       width: 280px;
-      border-radius: 14px;
-      border: 1px solid rgba(148, 163, 184, 0.25);
-      background: rgba(17,24,39,0.98);
-      backdrop-filter: blur(8px);
-      color: #e2e8f0;
-      box-shadow: 0 18px 46px rgba(0,0,0,0.32);
+      border-radius: 4px;
+      border: 1px solid var(--assist-ext-border);
+      background: var(--assist-ext-bg);
+      color: var(--assist-ext-text);
       padding: 12px;
       display: none;
     }
-    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .title { font-weight: 700; font-size: 13px; }
-    .meta { opacity: 0.7; font-size: 12px; }
-    .btnRow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-    button {
-      border-radius: 10px;
-      border: 1px solid rgba(148, 163, 184, 0.25);
-      background: rgba(30,41,59,0.9);
-      color: #e2e8f0;
-      padding: 8px 10px;
+    .assist-ext-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .assist-ext-title { font-weight: 600; font-size: 13px; }
+    .assist-ext-meta { color: var(--assist-ext-muted); font-size: 12px; }
+    .assist-ext-btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .assist-ext-button {
+      border-radius: 4px;
+      border: 1px solid var(--assist-ext-border);
+      background: transparent;
+      color: var(--assist-ext-text);
+      padding: 6px 8px;
       font-size: 12px;
       cursor: pointer;
     }
-    button.primary { background: #fbbf24; color: #111827; border-color: rgba(251,191,36,0.8); font-weight: 700; }
-    button.danger { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.35); }
+    .assist-ext-button--primary { border-color: var(--assist-ext-accent); color: var(--assist-ext-accent); font-weight: 600; }
   `;
 
   const wrap = document.createElement("div");
-  wrap.className = "wrap";
+  wrap.className = "assist-ext-wrap";
 
   const panel = document.createElement("div");
-  panel.className = "panel";
+  panel.className = "assist-ext-panel";
   panel.setAttribute("role", "dialog");
   panel.setAttribute("aria-label", "TLDR reading assistant");
 
   const header = document.createElement("div");
-  header.className = "row";
+  header.className = "assist-ext-row";
 
   const title = document.createElement("div");
-  title.className = "title";
+  title.className = "assist-ext-title";
   title.textContent = "TLDR";
 
   const close = document.createElement("button");
+  close.className = "assist-ext-button";
   close.textContent = "Close";
   close.addEventListener("click", (event) => {
     event.preventDefault();
@@ -203,15 +219,15 @@ function ensureFloatingBubble() {
   header.append(title, close);
 
   const meta = document.createElement("div");
-  meta.className = "meta";
+  meta.className = "assist-ext-meta";
   meta.id = "tldr-bubble-meta";
   meta.textContent = "Detecting page text…";
 
   const btnRow = document.createElement("div");
-  btnRow.className = "btnRow";
+  btnRow.className = "assist-ext-btn-row";
 
   const highlight = document.createElement("button");
-  highlight.className = "primary";
+  highlight.className = "assist-ext-button assist-ext-button--primary";
   highlight.textContent = "Highlight key phrases";
   highlight.addEventListener("click", (event) => {
     event.preventDefault();
@@ -228,7 +244,7 @@ function ensureFloatingBubble() {
   });
 
   const clear = document.createElement("button");
-  clear.className = "danger";
+  clear.className = "assist-ext-button";
   clear.textContent = "Clear highlights";
   clear.addEventListener("click", (event) => {
     event.preventDefault();
@@ -241,7 +257,7 @@ function ensureFloatingBubble() {
   panel.append(header, meta, btnRow);
 
   const bubble = document.createElement("button");
-  bubble.className = "bubble";
+  bubble.className = "assist-ext-bubble";
   bubble.setAttribute("aria-label", "Open TLDR");
   bubble.textContent = "TLDR";
   bubble.addEventListener("click", (event) => {
@@ -259,7 +275,7 @@ function ensureFloatingBubble() {
 function setBubbleExpanded(next: boolean) {
   bubbleExpanded = next;
   const host = document.getElementById(BUBBLE_HOST_ID);
-  const panel = host?.shadowRoot?.querySelector(".panel") as HTMLElement | null;
+  const panel = host?.shadowRoot?.querySelector(".assist-ext-panel") as HTMLElement | null;
   if (panel) {
     panel.style.display = bubbleExpanded ? "block" : "none";
   }

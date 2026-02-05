@@ -100,10 +100,10 @@ export default function AccountPage() {
 
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen flex-col bg-slate-50">
+      <div className="flex min-h-screen flex-col bg-background">
         <SiteHeader />
         <main className="mx-auto w-full max-w-6xl px-6 py-16">
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
             Loading session…
           </div>
@@ -114,7 +114,7 @@ export default function AccountPage() {
 
   if (!session?.user) {
     return (
-      <div className="flex min-h-screen flex-col bg-slate-50">
+      <div className="flex min-h-screen flex-col bg-background">
         <SiteHeader />
         <main className="mx-auto w-full max-w-6xl px-6 py-16">
           <Alert>
@@ -129,12 +129,12 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
       <main className="mx-auto w-full max-w-6xl px-6 py-16">
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h1 className="text-3xl font-semibold text-slate-900">Your account</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Your account</h1>
             <Button variant="outline" onClick={handlePortal} disabled={portalLoading}>
               {portalLoading ? "Opening portal…" : "Manage subscription"}
             </Button>
@@ -146,7 +146,7 @@ export default function AccountPage() {
             </Alert>
           ) : null}
           {loading ? (
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
               Loading account details…
             </div>
@@ -162,7 +162,7 @@ export default function AccountPage() {
                     <Badge variant="secondary">Status: {profile.subscription_status}</Badge>
                     {profile.cancel_at_period_end ? <Badge variant="warning">Cancels at period end</Badge> : null}
                   </div>
-                  <ul className="space-y-2 text-sm text-slate-700">
+                  <ul className="space-y-2 text-xs text-muted-foreground">
                     <li>Email: {profile.email ?? "Unknown"}</li>
                     <li>Monthly usage: {profile.monthly_usage}</li>
                     <li>Monthly limit: {profile.monthly_limit}</li>

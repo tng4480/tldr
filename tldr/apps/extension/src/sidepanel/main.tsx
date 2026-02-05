@@ -5,20 +5,7 @@ import { computeSpacyStyleHighlights, extractDateHighlights } from "@tldr/core";
 import type { ApplyHighlightsAck, AuthStatusResult, ExtractResult, LlmActionResult } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
-
-const panelStyles: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "16px",
-  padding: "16px",
-};
-
-const cardStyles: React.CSSProperties = {
-  background: "#111827",
-  borderRadius: "12px",
-  padding: "14px",
-  border: "1px solid rgba(148, 163, 184, 0.2)",
-};
+import "./sidepanel.css";
 
 function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
@@ -338,100 +325,77 @@ function App() {
   }, [authState.isAuthenticated, pageText, tabId]);
 
   return (
-    <div style={panelStyles}>
-      <div style={{ ...cardStyles, display: "flex", flexDirection: "column", gap: "10px" }}>
-        <h2 style={{ margin: 0, fontSize: "18px" }}>TLDR Reading Assistant</h2>
-        <p style={{ margin: 0, opacity: 0.7 }}>Analyze the current page, highlight keywords, or extract key info.</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+    <div className="assist-ext-shell">
+      <header className="assist-ext-header">
+        <div>
+          <h1 className="assist-ext-title">TLDR</h1>
+          <p className="assist-ext-subtitle">Reading assistant</p>
+        </div>
+        <span className="assist-ext-pill">Side panel</span>
+      </header>
+
+      <section className="assist-ext-section">
+        <div className="assist-ext-section-title">Connection</div>
+        <div className="assist-ext-row">
+          <span className="assist-ext-status">
+            {authState.isAuthenticated
+              ? `Connected${authState.expiresAt ? ` (expires ${new Date(authState.expiresAt).toLocaleDateString()})` : ""}`
+              : "Not connected (highlights only)."}
+          </span>
           {authState.isAuthenticated ? (
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ opacity: 0.7, fontSize: "12px" }}>
-                Connected{authState.expiresAt ? ` (expires ${new Date(authState.expiresAt).toLocaleDateString()})` : ""}
-              </div>
-              <button
-                onClick={handleDisconnect}
-                disabled={authState.isLoading}
-                style={{
-                  background: "rgba(239,68,68,0.15)",
-                  border: "1px solid rgba(239,68,68,0.35)",
-                  color: "#fecaca",
-                  padding: "6px 10px",
-                  borderRadius: "8px",
-                }}
-              >
-                Disconnect
-              </button>
-            </div>
+            <button className="assist-ext-button assist-ext-button--danger" onClick={handleDisconnect} disabled={authState.isLoading}>
+              Disconnect
+            </button>
           ) : (
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ opacity: 0.7, fontSize: "12px" }}>Not connected (highlights only).</div>
-              <button
-                onClick={handleSignIn}
-                disabled={authState.isLoading}
-                style={{ background: "#38bdf8", border: "none", color: "#0f172a", padding: "6px 10px", borderRadius: "8px" }}
-              >
+            <>
+              <button className="assist-ext-button assist-ext-button--accent" onClick={handleSignIn} disabled={authState.isLoading}>
                 Sign in
               </button>
-              <button
-                onClick={handleConnect}
-                disabled={authState.isLoading}
-                style={{
-                  background: "rgba(148,163,184,0.12)",
-                  border: "1px solid rgba(148,163,184,0.25)",
-                  color: "#e2e8f0",
-                  padding: "6px 10px",
-                  borderRadius: "8px",
-                }}
-              >
+              <button className="assist-ext-button" onClick={handleConnect} disabled={authState.isLoading}>
                 Connect extension
               </button>
-            </div>
+            </>
           )}
-          {authState.error ? <div style={{ color: "#fca5a5", fontSize: "12px" }}>{authState.error}</div> : null}
         </div>
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <button
-            onClick={handleAnalyze}
-            style={{ background: "#38bdf8", border: "none", color: "#0f172a", padding: "8px 12px", borderRadius: "8px" }}
-          >
+        {authState.error ? <div className="assist-ext-error">{authState.error}</div> : null}
+      </section>
+
+      <section className="assist-ext-section">
+        <div className="assist-ext-section-title">Actions</div>
+        <div className="assist-ext-segmented" role="group" aria-label="Page actions">
+          <button className="assist-ext-segment" onClick={handleAnalyze}>
             Analyze page
           </button>
-          <button
-            onClick={handleHighlightKeywords}
-            style={{ background: "#fbbf24", border: "none", color: "#111827", padding: "8px 12px", borderRadius: "8px" }}
-          >
+          <button className="assist-ext-segment" onClick={handleHighlightKeywords}>
             {highlightState.isLoading ? "Highlighting…" : "Highlight keywords"}
           </button>
-          <button
-            onClick={handleKeyInfo} disabled={!authState.isAuthenticated}
-            style={{ background: "#a78bfa", border: "none", color: "#111827", padding: "8px 12px", borderRadius: "8px" }}
-          >
+          <button className="assist-ext-segment" onClick={handleKeyInfo} disabled={!authState.isAuthenticated}>
             {keyInfoState.isLoading ? "Extracting…" : "Extract key info"}
           </button>
         </div>
-        {error ? <div style={{ color: "#fca5a5" }}>{error}</div> : null}
-        {highlightState.error ? <div style={{ color: "#fca5a5" }}>{highlightState.error}</div> : null}
+        {error ? <div className="assist-ext-error">{error}</div> : null}
+        {highlightState.error ? <div className="assist-ext-error">{highlightState.error}</div> : null}
         {highlightState.count !== null && !highlightState.error ? (
-          <div style={{ color: "#fcd34d" }}>Highlighted {highlightState.count} keyword matches.</div>
+          <div className="assist-ext-status">Highlighted {highlightState.count} keyword matches.</div>
         ) : null}
-      </div>
+      </section>
 
-      <div style={cardStyles}>
-        <h3 style={{ marginTop: 0 }}>Key information</h3>
+      <section className="assist-ext-section">
+        <div className="assist-ext-section-title">Key information</div>
         {keyInfoState.isLoading ? (
-          <div style={{ opacity: 0.7 }}>Extracting key info…</div>
+          <div className="assist-ext-status">Extracting key info…</div>
         ) : keyInfoPayload ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div className="assist-ext-callout">
             {["Important dates", "Things to do", "Things to know"].map((heading) => {
               const items = Array.isArray((keyInfoPayload.sections as any)[heading])
                 ? ((keyInfoPayload.sections as any)[heading] as string[])
                 : [];
               return (
-                <div key={heading}>
-                  <div style={{ fontWeight: 600, marginBottom: "6px" }}>{heading}</div>
-                  <ul style={{ paddingLeft: "16px", margin: 0 }}>
+                <div key={heading} className="assist-ext-subsection">
+                  <div className="assist-ext-section-title">{heading}</div>
+                  <ul className="assist-ext-list">
                     {(items.length ? items : ["None"]).map((item, index) => (
-                      <li key={`${heading}-${index}`} style={{ marginBottom: "6px", whiteSpace: "pre-wrap" }}>
+                      <li key={`${heading}-${index}`} style={{ whiteSpace: "pre-wrap" }}>
                         {item}
                       </li>
                     ))}
@@ -441,19 +405,14 @@ function App() {
             })}
 
             {keyInfoPayload.events?.length ? (
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: "6px" }}>Add to calendar</div>
-                <ul style={{ paddingLeft: "16px", margin: 0 }}>
+              <div className="assist-ext-subsection">
+                <div className="assist-ext-section-title">Add to calendar</div>
+                <ul className="assist-ext-list">
                   {keyInfoPayload.events
                     .filter((event) => typeof event?.calendarUrl === "string" && event.calendarUrl.length > 0)
                     .map((event, index) => (
-                      <li key={`${event.title ?? "event"}-${index}`} style={{ marginBottom: "6px" }}>
-                        <a
-                          href={event.calendarUrl as string}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: "#60a5fa" }}
-                        >
+                      <li key={`${event.title ?? "event"}-${index}`}>
+                        <a href={event.calendarUrl as string} target="_blank" rel="noreferrer" className="assist-ext-link">
                           {event.title ?? "Open in Google Calendar"}
                         </a>
                       </li>
@@ -463,34 +422,30 @@ function App() {
             ) : null}
           </div>
         ) : keyInfoResult ? (
-          <ul style={{ paddingLeft: "16px", margin: 0 }}>
+          <ul className="assist-ext-list">
             {keyInfoLines.map((line, index) => (
-              <li key={`${line}-${index}`} style={{ marginBottom: "6px", whiteSpace: "pre-wrap" }}>
+              <li key={`${line}-${index}`} style={{ whiteSpace: "pre-wrap" }}>
                 {line}
               </li>
             ))}
           </ul>
         ) : (
-          <div style={{ opacity: 0.7 }}>Run the key info tool to see the most important points.</div>
+          <div className="assist-ext-status">Run the key info tool to see the most important points.</div>
         )}
-        {keyInfoState.error ? <div style={{ color: "#fca5a5", marginTop: "8px" }}>{keyInfoState.error}</div> : null}
-      </div>
+        {keyInfoState.error ? <div className="assist-ext-error">{keyInfoState.error}</div> : null}
+      </section>
 
-      <div style={cardStyles}>
-        <h3 style={{ marginTop: 0 }}>Page data</h3>
+      <section className="assist-ext-section">
+        <div className="assist-ext-section-title">Page data</div>
         {isLoading ? (
-          <div style={{ opacity: 0.7 }}>Analyzing…</div>
+          <div className="assist-ext-status">Analyzing…</div>
         ) : firstSentence ? (
           <div style={{ whiteSpace: "pre-wrap" }}>{firstSentence}</div>
         ) : (
-          <div style={{ opacity: 0.7 }}>No page data yet.</div>
+          <div className="assist-ext-status">No page data yet.</div>
         )}
-        {sentences.length ? (
-          <div style={{ marginTop: "10px", opacity: 0.6, fontSize: "12px" }}>
-            {sentences.length} sentences detected.
-          </div>
-        ) : null}
-      </div>
+        {sentences.length ? <div className="assist-ext-meta">{sentences.length} sentences detected.</div> : null}
+      </section>
     </div>
   );
 }

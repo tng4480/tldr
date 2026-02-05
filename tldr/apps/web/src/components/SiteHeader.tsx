@@ -8,13 +8,13 @@ export default function SiteHeader() {
   const { data: session } = useSession();
 
   return (
-    <header className="border-b bg-white">
+    <header className="border-b bg-background">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-4">
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-xl font-semibold text-indigo-700">
+          <Link href="/" className="text-lg font-semibold text-foreground">
             Clarity Companion
           </Link>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             Reading simplifier with opt-in AI
           </span>
         </div>
