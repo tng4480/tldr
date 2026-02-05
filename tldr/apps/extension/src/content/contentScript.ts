@@ -85,7 +85,7 @@ function ensureHighlightStyles() {
   const style = document.createElement("style");
   style.textContent = `
     ::highlight(${HIGHLIGHT_NAME_SENTENCES}) {
-      background-color: rgba(250, 204, 21, 0.55);
+      background-color: rgba(249, 116, 75, 0.28);
     }
 
     ::highlight(${HIGHLIGHT_NAME_KEYWORDS}) {
@@ -132,18 +132,18 @@ function ensureFloatingBubble() {
   style.textContent = `
     :host { all: initial; }
     :host {
-      --assist-ext-bg: #f8f9fa;
-      --assist-ext-border: #e9ecef;
-      --assist-ext-text: #212529;
-      --assist-ext-muted: #6c757d;
-      --assist-ext-accent: #007aff;
+      --assist-ext-bg: #ededed;
+      --assist-ext-border: #d6c4b0;
+      --assist-ext-text: #102937;
+      --assist-ext-muted: #124d54;
+      --assist-ext-accent: #f9744b;
     }
     @media (prefers-color-scheme: dark) {
       :host {
-        --assist-ext-bg: #212529;
-        --assist-ext-border: #343a40;
-        --assist-ext-text: #f8f9fa;
-        --assist-ext-muted: #adb5bd;
+        --assist-ext-bg: #091d26;
+        --assist-ext-border: #124d54;
+        --assist-ext-text: #ededed;
+        --assist-ext-muted: #d6c4b0;
       }
     }
     .assist-ext-wrap {
@@ -672,8 +672,8 @@ function showPopover(entry: HighlightEntry, event: MouseEvent) {
     const shadow = host.attachShadow({ mode: "open" });
     const container = document.createElement("div");
     container.id = "tldr-inline-container";
-    container.style.background = "#111827";
-    container.style.color = "#fff";
+    container.style.background = "#102937";
+    container.style.color = "#ededed";
     container.style.padding = "8px 12px";
     container.style.borderRadius = "8px";
     container.style.boxShadow = "0 12px 30px rgba(0,0,0,0.2)";

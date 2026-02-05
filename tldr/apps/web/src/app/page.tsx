@@ -253,8 +253,8 @@ export default function HomePage() {
               key={`${sentenceStart}-${index}-${span.kind}`}
               className={
                 span.kind === "date"
-                  ? "rounded-md bg-emerald-500/15 px-1 text-emerald-800 ring-1 ring-emerald-500/20 dark:text-emerald-200"
-                  : "rounded-md bg-violet-500/15 px-1 text-violet-800 ring-1 ring-violet-500/20 dark:text-violet-200"
+                  ? "rounded-md bg-secondary/15 px-1 text-secondary ring-1 ring-secondary/25 dark:text-secondary-foreground"
+                  : "rounded-md bg-muted/70 px-1 text-foreground ring-1 ring-border/60"
               }
             >
               {spanText}
@@ -463,7 +463,7 @@ export default function HomePage() {
                       return (
                         <span key={`${sentenceRange.start}-${sentenceRange.end}`}>
                           {hardSentences[index] ? (
-                            <mark className="rounded-md bg-amber-500/15 px-1 text-amber-900 dark:text-amber-200">
+                            <mark className="rounded-md bg-primary/20 px-1 text-foreground ring-1 ring-primary/25">
                               {content}
                             </mark>
                           ) : (
@@ -578,7 +578,7 @@ export default function HomePage() {
                             });
                           return (
                             <li key={`${event.title}-${index}`}>
-                              <a className="text-sky-600 hover:underline" href={calendarUrl} target="_blank" rel="noreferrer">
+                              <a className="text-secondary underline-offset-4 hover:underline" href={calendarUrl} target="_blank" rel="noreferrer">
                                 {event.title}
                               </a>
                             </li>

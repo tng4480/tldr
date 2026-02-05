@@ -100,7 +100,7 @@ export default function PricingPage() {
                 <ul className="space-y-2 text-sm text-foreground/90">
                   {tier.features.map((feature) => (
                     <li key={feature} className="flex items-start gap-2">
-                      <span className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />
+                      <span className="mt-1 h-2 w-2 rounded-full bg-secondary" />
                       <span>{feature}</span>
                     </li>
                   ))}
