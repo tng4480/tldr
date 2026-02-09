@@ -749,53 +749,14 @@ function isClickInsideHighlight(event: MouseEvent): HighlightEntry | null {
   return null;
 }
 
-function showPopover(entry: HighlightEntry, event: MouseEvent) {
-  let host = document.getElementById(POPUP_ID);
-  if (!host) {
-    host = document.createElement("div");
-    host.id = POPUP_ID;
-    host.style.position = "fixed";
-    host.style.zIndex = "2147483647";
-    host.style.top = "0";
-    host.style.left = "0";
-    host.style.pointerEvents = "none";
-    document.body.appendChild(host);
-    const shadow = host.attachShadow({ mode: "open" });
-    const container = document.createElement("div");
-    container.id = "tldr-inline-container";
-    container.style.background = "#102937";
-    container.style.color = "#ededed";
-    container.style.padding = "8px 12px";
-    container.style.borderRadius = "8px";
-    container.style.boxShadow = "0 12px 30px rgba(0,0,0,0.2)";
-    container.style.fontSize = "12px";
-    container.style.maxWidth = "280px";
-    container.style.pointerEvents = "auto";
-    const title = document.createElement("div");
-    title.textContent = "TLDR";
-    title.style.fontWeight = "600";
-    title.style.marginBottom = "4px";
-    const sentence = document.createElement("div");
-    sentence.textContent = entry.sentence;
-    sentence.style.opacity = "0.8";
-    const hint = document.createElement("div");
-    hint.textContent = "Open side panel for actions";
-    hint.style.marginTop = "6px";
-    hint.style.fontSize = "11px";
-    hint.style.opacity = "0.6";
-    container.append(title, sentence, hint);
-    shadow.appendChild(container);
-  }
-  const rect = { x: event.clientX, y: event.clientY };
-  host.style.transform = `translate(${rect.x + 12}px, ${rect.y + 12}px)`;
-}
-
 function handleClick(event: MouseEvent) {
+  // Remove any existing inline popover (older builds showed a tooltip on highlight click).
+  document.getElementById(POPUP_ID)?.remove();
+
   const entry = isClickInsideHighlight(event);
   if (!entry) {
     return;
   }
-  showPopover(entry, event);
   const contextRange = entry.range.cloneRange();
   const offsets = rangeToOffsets(currentNodes, contextRange);
   const contextText = offsets ? contextRange.toString() : entry.sentence;
