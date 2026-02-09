@@ -2,7 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRoot } from "react-dom/client";
 import type { HighlightSpan } from "@tldr/core";
 import { computeSpacyStyleHighlights, extractDateHighlights } from "@tldr/core";
-import type { ApplyHighlightsAck, AuthStatusResult, ExtractResult, LlmActionResult } from "../shared/messages";
+import type {
+  ApplyHighlightsAck,
+  ApplyRsvpCursorRequest,
+  AuthStatusResult,
+  ClearRsvpCursorRequest,
+  ExtractResult,
+  LlmActionResult,
+} from "../shared/messages";
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
 import { clampHighlightContrast, DEFAULT_HIGHLIGHT_CONTRAST, HIGHLIGHT_CONTRAST_KEY } from "../shared/settings";
@@ -50,7 +57,10 @@ function buildHighlights(text: string): HighlightSpan[] {
   });
 }
 
-const DEFAULT_RSVP_WPM = 300;
+const DEFAULT_RSVP_WPM = 450;
+const RSVP_CONTEXT_WINDOW = 8;
+
+type RsvpToken = { word: string; start: number; end: number };
 
 function getAnchorIndex(word: string): number {
   const length = word.length;
@@ -107,7 +117,7 @@ function App() {
   const [pageText, setPageText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [rsvpWpm, setRsvpWpm] = useState<number>(DEFAULT_RSVP_WPM);
-  const [rsvpWords, setRsvpWords] = useState<string[]>([]);
+  const [rsvpTokens, setRsvpTokens] = useState<RsvpToken[]>([]);
   const [rsvpIndex, setRsvpIndex] = useState<number>(0);
   const [rsvpIsPlaying, setRsvpIsPlaying] = useState<boolean>(false);
   const [rsvpIsLoading, setRsvpIsLoading] = useState<boolean>(false);
@@ -176,14 +186,55 @@ function App() {
   }, [keyInfoResult]);
 
   const currentRsvpWord = useMemo(() => {
-    if (!rsvpWords.length) {
+    if (!rsvpTokens.length) {
       return "";
     }
-    const index = Math.min(rsvpIndex, rsvpWords.length - 1);
-    return rsvpWords[index] ?? "";
-  }, [rsvpIndex, rsvpWords]);
+    const index = Math.min(rsvpIndex, rsvpTokens.length - 1);
+    return rsvpTokens[index]?.word ?? "";
+  }, [rsvpIndex, rsvpTokens]);
 
   const rsvpDisplay = useMemo(() => splitWordAroundAnchor(currentRsvpWord), [currentRsvpWord]);
+
+  const rsvpContext = useMemo(() => {
+    if (!rsvpTokens.length) {
+      return null;
+    }
+
+    const index = Math.min(rsvpIndex, rsvpTokens.length - 1);
+    const start = Math.max(0, index - RSVP_CONTEXT_WINDOW);
+    const end = Math.min(rsvpTokens.length, index + RSVP_CONTEXT_WINDOW + 1);
+
+    return {
+      before: rsvpTokens.slice(start, index).map((token) => token.word),
+      current: rsvpTokens[index]?.word ?? "",
+      after: rsvpTokens.slice(index + 1, end).map((token) => token.word),
+      hasPrefix: start > 0,
+      hasSuffix: end < rsvpTokens.length,
+    };
+  }, [rsvpIndex, rsvpTokens]);
+
+  const sendRsvpCursorUpdate = useCallback(
+    (activeTabId: number, token: RsvpToken, options?: { scrollIntoView?: boolean }) => {
+      chrome.runtime.sendMessage({
+        type: "ApplyRsvpCursorRequest",
+        requestId: createRequestId("rsvp-cursor"),
+        tabId: activeTabId,
+        start: token.start,
+        end: token.end,
+        word: token.word,
+        scrollIntoView: options?.scrollIntoView ?? false,
+      } satisfies ApplyRsvpCursorRequest);
+    },
+    [],
+  );
+
+  const sendRsvpCursorClear = useCallback((activeTabId: number) => {
+    chrome.runtime.sendMessage({
+      type: "ClearRsvpCursorRequest",
+      requestId: createRequestId("rsvp-cursor-clear"),
+      tabId: activeTabId,
+    } satisfies ClearRsvpCursorRequest);
+  }, []);
 
   const getActiveTabId = useCallback(async (): Promise<number | null> => {
     return await new Promise<number | null>((resolve) => {
@@ -468,6 +519,7 @@ function App() {
         setRsvpError("No active tab.");
         return;
       }
+      setTabId(activeId);
       setRsvpIsLoading(true);
       setRsvpError(null);
 
@@ -476,44 +528,60 @@ function App() {
         if (extract.error) {
           setRsvpError(extract.error);
           setRsvpIsLoading(false);
+          sendRsvpCursorClear(activeId);
           return;
         }
         const text = extract.text ?? "";
-        const words = text.trim().split(/\s+/).filter(Boolean);
-        if (!words.length) {
+        const tokens: RsvpToken[] = [];
+        const regex = /\S+/g;
+        let match: RegExpExecArray | null = regex.exec(text);
+        while (match) {
+          const word = match[0] ?? "";
+          if (word) {
+            tokens.push({ word, start: match.index, end: match.index + word.length });
+          }
+          match = regex.exec(text);
+        }
+        if (!tokens.length) {
           setRsvpError("No readable text found on this page.");
           setRsvpIsLoading(false);
+          sendRsvpCursorClear(activeId);
           return;
         }
-        setRsvpWords(words);
+        setRsvpTokens(tokens);
         setRsvpIndex(0);
         setRsvpIsPlaying(true);
         setRsvpIsLoading(false);
+        sendRsvpCursorUpdate(activeId, tokens[0]!, { scrollIntoView: true });
       } catch (err) {
         setRsvpError(err instanceof Error ? err.message : "Unable to extract page text.");
         setRsvpIsLoading(false);
+        sendRsvpCursorClear(activeId);
       }
     })();
-  }, [getActiveTabId, requestExtract]);
+  }, [getActiveTabId, requestExtract, sendRsvpCursorClear, sendRsvpCursorUpdate]);
 
   const handleRsvpToggle = useCallback(() => {
-    if (!rsvpWords.length) {
+    if (!rsvpTokens.length) {
       return;
     }
     setRsvpIsPlaying((prev) => !prev);
-  }, [rsvpWords.length]);
+  }, [rsvpTokens.length]);
 
   const handleRsvpStop = useCallback(() => {
     setRsvpIsPlaying(false);
     setRsvpIndex(0);
-  }, []);
+    if (tabId !== null && rsvpTokens.length) {
+      sendRsvpCursorUpdate(tabId, rsvpTokens[0]!, { scrollIntoView: true });
+    }
+  }, [rsvpTokens, sendRsvpCursorUpdate, tabId]);
 
   useEffect(() => {
-    if (!rsvpIsPlaying || rsvpWords.length === 0) {
+    if (!rsvpIsPlaying || rsvpTokens.length === 0) {
       return;
     }
 
-    if (rsvpIndex >= rsvpWords.length) {
+    if (rsvpIndex >= rsvpTokens.length) {
       setRsvpIsPlaying(false);
       return;
     }
@@ -524,7 +592,19 @@ function App() {
     }, interval);
 
     return () => window.clearTimeout(timeoutId);
-  }, [rsvpIndex, rsvpIsPlaying, rsvpWords.length, rsvpWpm]);
+  }, [rsvpIndex, rsvpIsPlaying, rsvpTokens.length, rsvpWpm]);
+
+  useEffect(() => {
+    if (tabId === null || !rsvpTokens.length) {
+      return;
+    }
+    const index = Math.min(rsvpIndex, rsvpTokens.length - 1);
+    const token = rsvpTokens[index];
+    if (!token) {
+      return;
+    }
+    sendRsvpCursorUpdate(tabId, token, { scrollIntoView: rsvpIsPlaying });
+  }, [rsvpIndex, rsvpIsPlaying, rsvpTokens, sendRsvpCursorUpdate, tabId]);
 
   return (
     <div className="assist-ext-shell">
@@ -605,14 +685,23 @@ function App() {
           </span>
           <span className="assist-ext-rsvp-right">{rsvpDisplay.right}</span>
         </div>
+        {/* {rsvpContext ? (
+          <div className="assist-ext-rsvp-cursor" aria-label="RSVP text cursor" aria-live="polite">
+            {rsvpContext.hasPrefix ? <span aria-hidden="true">… </span> : null}
+            {rsvpContext.before.length ? <span>{rsvpContext.before.join(" ")} </span> : null}
+            <span className="assist-ext-rsvp-cursor-current">{rsvpContext.current}</span>
+            {rsvpContext.after.length ? <span> {rsvpContext.after.join(" ")}</span> : null}
+            {rsvpContext.hasSuffix ? <span aria-hidden="true"> …</span> : null}
+          </div>
+        ) : null} */}
         <div className="assist-ext-row">
           <button className="assist-ext-button assist-ext-button--accent" onClick={handleRsvpStart} disabled={rsvpIsLoading}>
             {rsvpIsLoading ? "Loading…" : "Start"}
           </button>
-          <button className="assist-ext-button" onClick={handleRsvpToggle} disabled={!rsvpWords.length}>
+          <button className="assist-ext-button" onClick={handleRsvpToggle} disabled={!rsvpTokens.length}>
             {rsvpIsPlaying ? "Pause" : "Resume"}
           </button>
-          <button className="assist-ext-button" onClick={handleRsvpStop} disabled={!rsvpWords.length}>
+          <button className="assist-ext-button" onClick={handleRsvpStop} disabled={!rsvpTokens.length}>
             Reset
           </button>
         </div>

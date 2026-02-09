@@ -3,6 +3,8 @@
 import type {
   ApplyHighlightsAck,
   ApplyHighlightsRequest,
+  ApplyRsvpCursorRequest,
+  ClearRsvpCursorRequest,
   ContentConnect,
   ContentReady,
   ExtractRequest,
@@ -30,6 +32,7 @@ const pendingByTab = new Map<
   {
     extract?: ExtractRequest;
     highlights?: ApplyHighlightsRequest;
+    cursor?: ApplyRsvpCursorRequest | ClearRsvpCursorRequest;
   }
 >();
 
@@ -213,7 +216,7 @@ async function callLlm(request: LlmActionRequest): Promise<LlmActionResult> {
   }
 }
 
-function sendToTab(tabId: number, message: ApplyHighlightsRequest | ExtractRequest) {
+function sendToTab(tabId: number, message: ApplyHighlightsRequest | ExtractRequest | ApplyRsvpCursorRequest | ClearRsvpCursorRequest) {
   log("bg", "sendToTab", { tabId, type: message.type, requestId: message.requestId });
   // chrome.tabs.sendMessage(tabId, message, () => {
   //   const err = chrome.runtime.lastError;
@@ -262,12 +265,17 @@ function broadcastToSidepanel(message: ExtractResult | ApplyHighlightsAck | High
   chrome.runtime.sendMessage(message);
 }
 
-function markPending(tabId: number, message: ExtractRequest | ApplyHighlightsRequest) {
+function markPending(
+  tabId: number,
+  message: ExtractRequest | ApplyHighlightsRequest | ApplyRsvpCursorRequest | ClearRsvpCursorRequest,
+) {
   const pending = pendingByTab.get(tabId) ?? {};
   if (message.type === "ExtractRequest") {
     pending.extract = message;
-  } else {
+  } else if (message.type === "ApplyHighlightsRequest") {
     pending.highlights = message;
+  } else {
+    pending.cursor = message;
   }
   pendingByTab.set(tabId, pending);
 }
@@ -284,6 +292,9 @@ function flushPending(tabId: number) {
   }
   if (pending.highlights) {
     sendToTab(tabId, pending.highlights);
+  }
+  if (pending.cursor) {
+    sendToTab(tabId, pending.cursor);
   }
 }
 
@@ -499,6 +510,29 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
       highlights: request.highlights?.length ?? 0,
       type: request.highlightType,
     });
+
+    const normalized = { ...request, tabId: resolvedTabId };
+    if (!readyTabs.has(resolvedTabId)) {
+      markPending(resolvedTabId, normalized);
+      void injectContentScript(resolvedTabId);
+      sendResponse({ ok: true });
+      return;
+    }
+
+    sendToTab(resolvedTabId, normalized);
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (typed.type === "ApplyRsvpCursorRequest" || typed.type === "ClearRsvpCursorRequest") {
+    const request = message as ApplyRsvpCursorRequest | ClearRsvpCursorRequest;
+    const resolvedTabId = resolveTabId(request.tabId, sender.tab?.id);
+    if (resolvedTabId === undefined) {
+      sendResponse({ ok: false });
+      return;
+    }
+
+    log("bg", typed.type, { tabId: resolvedTabId, requestId: (request as any).requestId });
 
     const normalized = { ...request, tabId: resolvedTabId };
     if (!readyTabs.has(resolvedTabId)) {

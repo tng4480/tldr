@@ -54,6 +54,20 @@ export type ApplyHighlightsAck = MessageBase & {
   error?: string;
 };
 
+export type ApplyRsvpCursorRequest = MessageBase & {
+  type: "ApplyRsvpCursorRequest";
+  tabId: number;
+  start: number;
+  end: number;
+  word?: string;
+  scrollIntoView?: boolean;
+};
+
+export type ClearRsvpCursorRequest = MessageBase & {
+  type: "ClearRsvpCursorRequest";
+  tabId: number;
+};
+
 export type HighlightClicked = MessageBase & {
   type: "HighlightClicked";
   tabId?: number;
@@ -104,6 +118,8 @@ export type ExtensionMessage =
   | ExtractResult
   | ApplyHighlightsRequest
   | ApplyHighlightsAck
+  | ApplyRsvpCursorRequest
+  | ClearRsvpCursorRequest
   | HighlightClicked
   | LlmActionRequest
   | LlmActionResult

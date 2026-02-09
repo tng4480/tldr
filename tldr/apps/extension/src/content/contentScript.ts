@@ -10,6 +10,8 @@ import { computeSpacyStyleHighlights, splitIntoSentences, wordCount } from "@tld
 import { clampHighlightContrast, DEFAULT_HIGHLIGHT_CONTRAST, HIGHLIGHT_CONTRAST_KEY } from "../shared/settings";
 import type {
   ApplyHighlightsRequest,
+  ApplyRsvpCursorRequest,
+  ClearRsvpCursorRequest,
   ContentConnect,
   ContentReady,
   ExtractRequest,
@@ -21,11 +23,15 @@ import { log, runtimeLastError, warn } from "../shared/logger";
 
 const HIGHLIGHT_NAME_SENTENCES = "tldr-highlight-sentences";
 const HIGHLIGHT_NAME_KEYWORDS = "tldr-highlight-keywords";
+const HIGHLIGHT_NAME_RSVP_CURSOR = "tldr-highlight-rsvp-cursor";
 const MARK_ATTR = "data-tldr-highlight";
 const POPUP_ID = "tldr-inline-popover";
 const BUBBLE_HOST_ID = "tldr-floating-bubble";
 const EMBOLDEN_ATTR = "data-tldr-embolden";
 const EMBOLDEN_CLASS = "tldr-embolden";
+const RSVP_CURSOR_ATTR = "data-tldr-rsvp-cursor";
+const RSVP_CURSOR_CLASS = "tldr-rsvp-cursor";
+const RSVP_CARET_ID = "tldr-rsvp-caret";
 const DEEMPHASIZE_CLASS = "tldr-deemphasize";
 const DEEMPHASIZE_COLOR_VAR = "--tldr-deemphasis-color";
 const BASE_COLOR_VAR = "--tldr-base-color";
@@ -50,6 +56,9 @@ let bubbleInjected = false;
 let bubbleExpanded = false;
 let highlightContrast = DEFAULT_HIGHLIGHT_CONTRAST;
 let storageInitialized = false;
+let rsvpCursorRange: Range | null = null;
+let rsvpCaret: HTMLDivElement | null = null;
+let rsvpCaretListenersAttached = false;
 
 function signalContentReady() {
   // This must run only after `chrome.runtime.onMessage.addListener(...)` is registered,
@@ -97,9 +106,44 @@ function ensureHighlightStyles() {
       text-shadow: 0.35px 0 0 currentColor, -0.35px 0 0 currentColor;
     }
 
+    ::highlight(${HIGHLIGHT_NAME_RSVP_CURSOR}) {
+      background-color: rgba(249, 116, 75, 0.22);
+      text-decoration: underline;
+      text-decoration-thickness: 2px;
+      text-decoration-color: rgba(249, 116, 75, 0.85);
+      text-underline-offset: 2px;
+    }
+
     .${EMBOLDEN_CLASS}[${EMBOLDEN_ATTR}] {
       color: var(${BASE_COLOR_VAR});
       text-shadow: 0.35px 0 0 currentColor, -0.35px 0 0 currentColor;
+    }
+
+    .${RSVP_CURSOR_CLASS}[${RSVP_CURSOR_ATTR}] {
+      position: relative;
+      background-color: rgba(249, 116, 75, 0.22);
+      border-radius: 3px;
+    }
+
+    .${RSVP_CURSOR_CLASS}[${RSVP_CURSOR_ATTR}]::before {
+      content: "|";
+      position: absolute;
+      left: -0.35em;
+      top: 50%;
+      transform: translateY(-50%);
+      color: rgba(249, 116, 75, 0.95);
+      font-weight: 700;
+    }
+
+    #${RSVP_CARET_ID} {
+      position: fixed;
+      width: 2px;
+      background: rgba(249, 116, 75, 0.95);
+      border-radius: 2px;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+      z-index: 2147483647;
+      pointer-events: none;
+      display: none;
     }
 
     .${DEEMPHASIZE_CLASS},
@@ -109,6 +153,115 @@ function ensureHighlightStyles() {
   `;
   document.head.appendChild(style);
   styleInjected = true;
+}
+
+function ensureRsvpCaret() {
+  if (rsvpCaret && rsvpCaret.isConnected) {
+    return;
+  }
+  const caret = document.createElement("div");
+  caret.id = RSVP_CARET_ID;
+  (document.body ?? document.documentElement).appendChild(caret);
+  rsvpCaret = caret;
+}
+
+function updateRsvpCaretPosition() {
+  if (!rsvpCursorRange || !rsvpCaret) {
+    return;
+  }
+
+  const caretRange = rsvpCursorRange.cloneRange();
+  caretRange.collapse(true);
+  const caretRect = caretRange.getBoundingClientRect();
+  const rangeRect = rsvpCursorRange.getBoundingClientRect();
+  const rect = caretRect.height > 0 ? caretRect : rangeRect;
+  if (!rect || rect.height <= 0) {
+    rsvpCaret.style.display = "none";
+    return;
+  }
+
+  rsvpCaret.style.display = "block";
+  rsvpCaret.style.left = `${Math.round(rect.left - 1)}px`;
+  rsvpCaret.style.top = `${Math.round(rect.top)}px`;
+  rsvpCaret.style.height = `${Math.max(10, Math.round(rect.height))}px`;
+}
+
+function attachRsvpCaretListeners() {
+  if (rsvpCaretListenersAttached) {
+    return;
+  }
+  rsvpCaretListenersAttached = true;
+  window.addEventListener("scroll", updateRsvpCaretPosition, { passive: true });
+  window.addEventListener("resize", updateRsvpCaretPosition, { passive: true });
+}
+
+function detachRsvpCaretListeners() {
+  if (!rsvpCaretListenersAttached) {
+    return;
+  }
+  rsvpCaretListenersAttached = false;
+  window.removeEventListener("scroll", updateRsvpCaretPosition);
+  window.removeEventListener("resize", updateRsvpCaretPosition);
+}
+
+function clearRsvpCursor() {
+  rsvpCursorRange = null;
+  if ("highlights" in CSS) {
+    CSS.highlights.delete(HIGHLIGHT_NAME_RSVP_CURSOR);
+  }
+  document.querySelectorAll(`span[${RSVP_CURSOR_ATTR}]`).forEach((node) => node.replaceWith(...node.childNodes));
+  if (rsvpCaret) {
+    rsvpCaret.style.display = "none";
+  }
+  detachRsvpCaretListeners();
+}
+
+function applyRsvpCursor(start: number, end: number, scrollIntoView: boolean, expectedWord?: string) {
+  clearRsvpCursor();
+  ensureHighlightStyles();
+
+  if (!currentReadableText || !currentNodes.length || end > currentReadableText.length) {
+    refreshNodes();
+  }
+
+  if (expectedWord && currentReadableText.slice(start, end) !== expectedWord) {
+    refreshNodes();
+  }
+
+  const range = offsetsToRange(currentNodes, start, end);
+  if (!range) {
+    return;
+  }
+
+  if (isInsideEditable(range.commonAncestorContainer)) {
+    return;
+  }
+
+  if (scrollIntoView) {
+    const rect = range.getBoundingClientRect();
+    if (rect.top < 0 || rect.bottom > window.innerHeight) {
+      const target = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
+      target?.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+  }
+
+  if ("highlights" in CSS) {
+    CSS.highlights.set(HIGHLIGHT_NAME_RSVP_CURSOR, new Highlight(range));
+  } else {
+    const wrapper = document.createElement("span");
+    wrapper.className = RSVP_CURSOR_CLASS;
+    wrapper.setAttribute(RSVP_CURSOR_ATTR, "true");
+    try {
+      range.surroundContents(wrapper);
+    } catch {
+      // ignore ranges that cannot be wrapped
+    }
+  }
+
+  rsvpCursorRange = range;
+  ensureRsvpCaret();
+  attachRsvpCaretListeners();
+  updateRsvpCaretPosition();
 }
 
 function ensureFloatingBubble() {
@@ -771,7 +924,9 @@ function handleClick(event: MouseEvent) {
   runtimeLastError("cs", "HighlightClicked sendMessage");
 }
 
-function handleMessage(message: ExtractRequest | ApplyHighlightsRequest) {
+function handleMessage(
+  message: ExtractRequest | ApplyHighlightsRequest | ApplyRsvpCursorRequest | ClearRsvpCursorRequest,
+) {
   if (message.type === "ExtractRequest") {
     const root = getReadableRoot(document);
     const { text } = extractReadableText(root);
@@ -813,9 +968,24 @@ function handleMessage(message: ExtractRequest | ApplyHighlightsRequest) {
     );
     runtimeLastError("cs", "ApplyHighlightsAck sendMessage");
   }
+
+  if (message.type === "ApplyRsvpCursorRequest") {
+    log("cs", "ApplyRsvpCursorRequest", {
+      requestId: message.requestId,
+      start: message.start,
+      end: message.end,
+      scroll: Boolean(message.scrollIntoView),
+    });
+    applyRsvpCursor(message.start, message.end, Boolean(message.scrollIntoView), message.word);
+  }
+
+  if (message.type === "ClearRsvpCursorRequest") {
+    log("cs", "ClearRsvpCursorRequest", { requestId: message.requestId });
+    clearRsvpCursor();
+  }
 }
 
-chrome.runtime.onMessage.addListener((message: ExtractRequest | ApplyHighlightsRequest) => {
+chrome.runtime.onMessage.addListener((message: ExtractRequest | ApplyHighlightsRequest | ApplyRsvpCursorRequest | ClearRsvpCursorRequest) => {
   log("cs", "onMessage", { type: message?.type, requestId: (message as any)?.requestId });
   handleMessage(message);
 });
