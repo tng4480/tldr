@@ -295,3 +295,32 @@ body {
   width: 100%;
   accent-color: var(--assist-ext-accent);
 }
+
+.assist-ext-rsvp-display {
+  border: 1px solid var(--assist-ext-border);
+  border-radius: var(--assist-ext-radius);
+  background: color-mix(in srgb, var(--assist-ext-surface) 80%, transparent);
+  padding: var(--assist-ext-space-4);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: 64px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.assist-ext-rsvp-left {
+  text-align: right;
+  white-space: pre;
+}
+
+.assist-ext-rsvp-anchor {
+  color: var(--assist-ext-accent);
+  padding: 0 4px;
+}
+
+.assist-ext-rsvp-right {
+  text-align: left;
+  white-space: pre;
+}

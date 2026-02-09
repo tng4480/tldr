@@ -50,6 +50,55 @@ function buildHighlights(text: string): HighlightSpan[] {
   });
 }
 
+const DEFAULT_RSVP_WPM = 300;
+
+function getAnchorIndex(word: string): number {
+  const length = word.length;
+  if (length <= 1) {
+    return 0;
+  }
+  if (length <= 5) {
+    return 1;
+  }
+  if (length <= 9) {
+    return 2;
+  }
+  return 3;
+}
+
+function splitWordAroundAnchor(word: string): { left: string; anchor: string; right: string } {
+  if (!word) {
+    return { left: "", anchor: "", right: "" };
+  }
+
+  const baseIndex = Math.min(getAnchorIndex(word), word.length - 1);
+  const isLetterOrNumber = (char: string) => /[A-Za-z0-9]/.test(char);
+  let anchorIndex = baseIndex;
+
+  if (!isLetterOrNumber(word[anchorIndex])) {
+    let offset = 1;
+    while (offset < word.length) {
+      const before = anchorIndex - offset;
+      const after = anchorIndex + offset;
+      if (before >= 0 && isLetterOrNumber(word[before])) {
+        anchorIndex = before;
+        break;
+      }
+      if (after < word.length && isLetterOrNumber(word[after])) {
+        anchorIndex = after;
+        break;
+      }
+      offset += 1;
+    }
+  }
+
+  return {
+    left: word.slice(0, anchorIndex),
+    anchor: word[anchorIndex] ?? "",
+    right: word.slice(anchorIndex + 1),
+  };
+}
+
 function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
@@ -57,6 +106,12 @@ function App() {
   const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
   const [pageText, setPageText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [rsvpWpm, setRsvpWpm] = useState<number>(DEFAULT_RSVP_WPM);
+  const [rsvpWords, setRsvpWords] = useState<string[]>([]);
+  const [rsvpIndex, setRsvpIndex] = useState<number>(0);
+  const [rsvpIsPlaying, setRsvpIsPlaying] = useState<boolean>(false);
+  const [rsvpIsLoading, setRsvpIsLoading] = useState<boolean>(false);
+  const [rsvpError, setRsvpError] = useState<string | null>(null);
   const [authState, setAuthState] = useState<{
     isLoading: boolean;
     isAuthenticated: boolean;
@@ -119,6 +174,16 @@ function App() {
       .map((line) => line.trim())
       .filter(Boolean);
   }, [keyInfoResult]);
+
+  const currentRsvpWord = useMemo(() => {
+    if (!rsvpWords.length) {
+      return "";
+    }
+    const index = Math.min(rsvpIndex, rsvpWords.length - 1);
+    return rsvpWords[index] ?? "";
+  }, [rsvpIndex, rsvpWords]);
+
+  const rsvpDisplay = useMemo(() => splitWordAroundAnchor(currentRsvpWord), [currentRsvpWord]);
 
   const getActiveTabId = useCallback(async (): Promise<number | null> => {
     return await new Promise<number | null>((resolve) => {
@@ -396,6 +461,71 @@ function App() {
     })();
   }, [authState.isAuthenticated, getActiveTabId, requestExtract]);
 
+  const handleRsvpStart = useCallback(() => {
+    void (async () => {
+      const activeId = await getActiveTabId();
+      if (activeId === null) {
+        setRsvpError("No active tab.");
+        return;
+      }
+      setRsvpIsLoading(true);
+      setRsvpError(null);
+
+      try {
+        const extract = await requestExtract(activeId);
+        if (extract.error) {
+          setRsvpError(extract.error);
+          setRsvpIsLoading(false);
+          return;
+        }
+        const text = extract.text ?? "";
+        const words = text.trim().split(/\s+/).filter(Boolean);
+        if (!words.length) {
+          setRsvpError("No readable text found on this page.");
+          setRsvpIsLoading(false);
+          return;
+        }
+        setRsvpWords(words);
+        setRsvpIndex(0);
+        setRsvpIsPlaying(true);
+        setRsvpIsLoading(false);
+      } catch (err) {
+        setRsvpError(err instanceof Error ? err.message : "Unable to extract page text.");
+        setRsvpIsLoading(false);
+      }
+    })();
+  }, [getActiveTabId, requestExtract]);
+
+  const handleRsvpToggle = useCallback(() => {
+    if (!rsvpWords.length) {
+      return;
+    }
+    setRsvpIsPlaying((prev) => !prev);
+  }, [rsvpWords.length]);
+
+  const handleRsvpStop = useCallback(() => {
+    setRsvpIsPlaying(false);
+    setRsvpIndex(0);
+  }, []);
+
+  useEffect(() => {
+    if (!rsvpIsPlaying || rsvpWords.length === 0) {
+      return;
+    }
+
+    if (rsvpIndex >= rsvpWords.length) {
+      setRsvpIsPlaying(false);
+      return;
+    }
+
+    const interval = Math.max(1, Math.round(60000 / rsvpWpm));
+    const timeoutId = window.setTimeout(() => {
+      setRsvpIndex((prev) => prev + 1);
+    }, interval);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [rsvpIndex, rsvpIsPlaying, rsvpWords.length, rsvpWpm]);
+
   return (
     <div className="assist-ext-shell">
       <header className="assist-ext-header">
@@ -464,6 +594,46 @@ function App() {
         {highlightState.count !== null && !highlightState.error ? (
           <div className="assist-ext-status">Highlighted {highlightState.count} keyword matches.</div>
         ) : null}
+      </section>
+
+      <section className="assist-ext-section">
+        <div className="assist-ext-section-title">Rapid serial visual presentation</div>
+        <div className="assist-ext-rsvp-display" aria-live="polite">
+          <span className="assist-ext-rsvp-left">{rsvpDisplay.left}</span>
+          <span className="assist-ext-rsvp-anchor" aria-hidden={rsvpDisplay.anchor === ""}>
+            {rsvpDisplay.anchor || "·"}
+          </span>
+          <span className="assist-ext-rsvp-right">{rsvpDisplay.right}</span>
+        </div>
+        <div className="assist-ext-row">
+          <button className="assist-ext-button assist-ext-button--accent" onClick={handleRsvpStart} disabled={rsvpIsLoading}>
+            {rsvpIsLoading ? "Loading…" : "Start"}
+          </button>
+          <button className="assist-ext-button" onClick={handleRsvpToggle} disabled={!rsvpWords.length}>
+            {rsvpIsPlaying ? "Pause" : "Resume"}
+          </button>
+          <button className="assist-ext-button" onClick={handleRsvpStop} disabled={!rsvpWords.length}>
+            Reset
+          </button>
+        </div>
+        <div className="assist-ext-field">
+          <div className="assist-ext-field-row">
+            <div className="assist-ext-field-label">Words per minute</div>
+            <div className="assist-ext-field-value">{rsvpWpm}</div>
+          </div>
+          <input
+            className="assist-ext-range"
+            type="range"
+            min={150}
+            max={700}
+            step={10}
+            value={rsvpWpm}
+            onChange={(event) => setRsvpWpm(Number(event.currentTarget.value))}
+            aria-label="Words per minute"
+          />
+          <div className="assist-ext-meta">The highlighted anchor letter stays fixed to speed up reading.</div>
+        </div>
+        {rsvpError ? <div className="assist-ext-error">{rsvpError}</div> : null}
       </section>
 
       <section className="assist-ext-section">
