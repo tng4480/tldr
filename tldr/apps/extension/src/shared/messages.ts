@@ -68,6 +68,13 @@ export type ClearRsvpCursorRequest = MessageBase & {
   tabId: number;
 };
 
+export type StartRsvpFromText = MessageBase & {
+  type: "StartRsvpFromText";
+  tabId: number;
+  text: string;
+  source: "selection";
+};
+
 export type HighlightClicked = MessageBase & {
   type: "HighlightClicked";
   tabId?: number;
@@ -120,6 +127,7 @@ export type ExtensionMessage =
   | ApplyHighlightsAck
   | ApplyRsvpCursorRequest
   | ClearRsvpCursorRequest
+  | StartRsvpFromText
   | HighlightClicked
   | LlmActionRequest
   | LlmActionResult

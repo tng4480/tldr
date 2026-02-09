@@ -9,6 +9,7 @@ import type {
   ClearRsvpCursorRequest,
   ExtractResult,
   LlmActionResult,
+  StartRsvpFromText,
 } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
@@ -61,6 +62,7 @@ const DEFAULT_RSVP_WPM = 450;
 const RSVP_CONTEXT_WINDOW = 8;
 
 type RsvpToken = { word: string; start: number; end: number };
+type SelectionMatch = { start: number; end: number };
 
 function getAnchorIndex(word: string): number {
   const length = word.length;
@@ -109,6 +111,66 @@ function splitWordAroundAnchor(word: string): { left: string; anchor: string; ri
   };
 }
 
+function tokenizeRsvpText(text: string, baseOffset = 0): RsvpToken[] {
+  const tokens: RsvpToken[] = [];
+  const regex = /\S+/g;
+  let match: RegExpExecArray | null = regex.exec(text);
+  while (match) {
+    const word = match[0] ?? "";
+    if (word) {
+      const start = baseOffset + match.index;
+      tokens.push({ word, start, end: start + word.length });
+    }
+    match = regex.exec(text);
+  }
+  return tokens;
+}
+
+function findSelectionInText(text: string, selectionText: string): SelectionMatch | null {
+  const trimmedSelection = selectionText.trim();
+  if (!trimmedSelection) {
+    return null;
+  }
+
+  const exactIndex = text.indexOf(trimmedSelection);
+  if (exactIndex >= 0) {
+    return { start: exactIndex, end: exactIndex + trimmedSelection.length };
+  }
+
+  const lowerText = text.toLowerCase();
+  const lowerSelection = trimmedSelection.toLowerCase();
+  const caseInsensitiveIndex = lowerText.indexOf(lowerSelection);
+  if (caseInsensitiveIndex >= 0) {
+    return { start: caseInsensitiveIndex, end: caseInsensitiveIndex + trimmedSelection.length };
+  }
+
+  const escaped = trimmedSelection.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const looseWhitespacePattern = escaped.replace(/\s+/g, "\\s+");
+  const pattern = new RegExp(looseWhitespacePattern, "i");
+  const match = pattern.exec(text);
+  if (!match || typeof match.index !== "number") {
+    return null;
+  }
+
+  const matchedValue = match[0] ?? "";
+  return { start: match.index, end: match.index + matchedValue.length };
+}
+
+function findTokenIndexForOffset(tokens: RsvpToken[], offset: number): number {
+  if (!tokens.length) {
+    return 0;
+  }
+  const index = tokens.findIndex((token) => offset >= token.start && offset < token.end);
+  if (index >= 0) {
+    return index;
+  }
+  const nextIndex = tokens.findIndex((token) => token.start >= offset);
+  if (nextIndex >= 0) {
+    return nextIndex;
+  }
+  return tokens.length - 1;
+}
+
 function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
@@ -122,6 +184,7 @@ function App() {
   const [rsvpIsPlaying, setRsvpIsPlaying] = useState<boolean>(false);
   const [rsvpIsLoading, setRsvpIsLoading] = useState<boolean>(false);
   const [rsvpError, setRsvpError] = useState<string | null>(null);
+  const [rsvpCursorEnabled, setRsvpCursorEnabled] = useState<boolean>(true);
   const [authState, setAuthState] = useState<{
     isLoading: boolean;
     isAuthenticated: boolean;
@@ -244,6 +307,33 @@ function App() {
     });
   }, []);
 
+  const requestExtract = useCallback((activeTabId: number): Promise<ExtractResult> => {
+    if (pendingExtractRef.current) {
+      pendingExtractRef.current.reject(new Error("Canceled by a newer request."));
+      window.clearTimeout(pendingExtractRef.current.timeoutId);
+      pendingExtractRef.current = null;
+    }
+
+    const requestId = createRequestId("extract");
+    return new Promise<ExtractResult>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        if (pendingExtractRef.current?.requestId === requestId) {
+          pendingExtractRef.current = null;
+        }
+        reject(new Error("Timed out extracting page text."));
+      }, 8000);
+
+      pendingExtractRef.current = { requestId, tabId: activeTabId, resolve, reject, timeoutId };
+      setError(null);
+      setPageText("");
+      chrome.runtime.sendMessage({
+        type: "ExtractRequest",
+        requestId,
+        tabId: activeTabId,
+      });
+    });
+  }, []);
+
   useEffect(() => {
     chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY], (result) => {
       setHighlightContrast(clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]));
@@ -262,6 +352,95 @@ function App() {
     chrome.storage.onChanged.addListener(handler);
     return () => chrome.storage.onChanged.removeListener(handler);
   }, []);
+
+  useEffect(() => {
+    const handler = (message: ExtractResult | ApplyHighlightsAck | LlmActionResult | StartRsvpFromText) => {
+      if (!message?.type) {
+        return;
+      }
+      log("sp", "onMessage", { type: message.type, tabId: (message as any).tabId, requestId: (message as any).requestId });
+      if (message.type === "ExtractResult") {
+        setError(message.error ?? null);
+        setPageText(message.text ?? "");
+
+        const pending = pendingExtractRef.current;
+        if (pending && pending.requestId === message.requestId && pending.tabId === message.tabId) {
+          window.clearTimeout(pending.timeoutId);
+          pendingExtractRef.current = null;
+          pending.resolve(message);
+        }
+      }
+      if (message.type === "ApplyHighlightsAck") {
+        setHighlightState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: message.error ?? null,
+          count: message.count ?? 0,
+        }));
+      }
+      if (message.type === "LlmActionResult" && message.action === "key_info") {
+        setKeyInfoState({ isLoading: false, error: message.error ?? null });
+        setKeyInfoResult(message.result ?? "");
+      }
+      if (message.type === "StartRsvpFromText") {
+        const text = (message.text ?? "").trim();
+        if (!text) {
+          setRsvpError("No text selected.");
+          return;
+        }
+
+        void (async () => {
+          setTabId(message.tabId);
+          setRsvpIsLoading(true);
+          setRsvpError(null);
+
+          try {
+            const extract = await requestExtract(message.tabId);
+            if (extract.error) {
+              setRsvpError(extract.error);
+              setRsvpIsLoading(false);
+              return;
+            }
+
+            const pageText = extract.text ?? "";
+            const pageTokens = tokenizeRsvpText(pageText);
+            const selectionMatch = findSelectionInText(pageText, text);
+
+            if (pageTokens.length && selectionMatch) {
+              const startIndex = findTokenIndexForOffset(pageTokens, selectionMatch.start);
+              setRsvpCursorEnabled(true);
+              setRsvpTokens(pageTokens);
+              setRsvpIndex(startIndex);
+              setRsvpIsPlaying(true);
+              setRsvpIsLoading(false);
+              sendRsvpCursorUpdate(message.tabId, pageTokens[startIndex]!, { scrollIntoView: true });
+              return;
+            }
+
+            const selectionTokens = tokenizeRsvpText(text);
+            if (!selectionTokens.length) {
+              setRsvpError("No readable text selected.");
+              setRsvpIsLoading(false);
+              return;
+            }
+
+            setRsvpCursorEnabled(false);
+            sendRsvpCursorClear(message.tabId);
+            setRsvpTokens(selectionTokens);
+            setRsvpIndex(0);
+            setRsvpIsPlaying(true);
+            setRsvpIsLoading(false);
+          } catch (err) {
+            setRsvpError(err instanceof Error ? err.message : "Unable to extract page text.");
+            setRsvpIsLoading(false);
+          }
+        })();
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handler);
+    return () => chrome.runtime.onMessage.removeListener(handler);
+  }, [requestExtract, sendRsvpCursorClear, sendRsvpCursorUpdate]);
 
   const handleContrastChange = useCallback((value: number) => {
     const next = clampHighlightContrast(value);
@@ -317,41 +496,6 @@ function App() {
     );
   }, []);
 
-  useEffect(() => {
-    const handler = (message: ExtractResult | ApplyHighlightsAck | LlmActionResult) => {
-      if (!message?.type) {
-        return;
-      }
-      log("sp", "onMessage", { type: message.type, tabId: (message as any).tabId, requestId: (message as any).requestId });
-      if (message.type === "ExtractResult") {
-        setError(message.error ?? null);
-        setPageText(message.text ?? "");
-
-        const pending = pendingExtractRef.current;
-        if (pending && pending.requestId === message.requestId && pending.tabId === message.tabId) {
-          window.clearTimeout(pending.timeoutId);
-          pendingExtractRef.current = null;
-          pending.resolve(message);
-        }
-      }
-      if (message.type === "ApplyHighlightsAck") {
-        setHighlightState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: message.error ?? null,
-          count: message.count ?? 0,
-        }));
-      }
-      if (message.type === "LlmActionResult" && message.action === "key_info") {
-        setKeyInfoState({ isLoading: false, error: message.error ?? null });
-        setKeyInfoResult(message.result ?? "");
-      }
-    };
-
-    chrome.runtime.onMessage.addListener(handler);
-    return () => chrome.runtime.onMessage.removeListener(handler);
-  }, []);
-
   const handleSignIn = useCallback(() => {
     chrome.tabs.create({ url: `${apiBase}/api/auth/signin` }, () => runtimeLastError("sp", "chrome.tabs.create sign-in"));
   }, [apiBase]);
@@ -400,33 +544,6 @@ function App() {
         });
       },
     );
-  }, []);
-
-  const requestExtract = useCallback((activeTabId: number): Promise<ExtractResult> => {
-    if (pendingExtractRef.current) {
-      pendingExtractRef.current.reject(new Error("Canceled by a newer request."));
-      window.clearTimeout(pendingExtractRef.current.timeoutId);
-      pendingExtractRef.current = null;
-    }
-
-    const requestId = createRequestId("extract");
-    return new Promise<ExtractResult>((resolve, reject) => {
-      const timeoutId = window.setTimeout(() => {
-        if (pendingExtractRef.current?.requestId === requestId) {
-          pendingExtractRef.current = null;
-        }
-        reject(new Error("Timed out extracting page text."));
-      }, 8000);
-
-      pendingExtractRef.current = { requestId, tabId: activeTabId, resolve, reject, timeoutId };
-      setError(null);
-      setPageText("");
-      chrome.runtime.sendMessage({
-        type: "ExtractRequest",
-        requestId,
-        tabId: activeTabId,
-      });
-    });
   }, []);
 
   const handleHighlightKeywords = useCallback(() => {
@@ -522,6 +639,7 @@ function App() {
       setTabId(activeId);
       setRsvpIsLoading(true);
       setRsvpError(null);
+      setRsvpCursorEnabled(true);
 
       try {
         const extract = await requestExtract(activeId);
@@ -532,16 +650,7 @@ function App() {
           return;
         }
         const text = extract.text ?? "";
-        const tokens: RsvpToken[] = [];
-        const regex = /\S+/g;
-        let match: RegExpExecArray | null = regex.exec(text);
-        while (match) {
-          const word = match[0] ?? "";
-          if (word) {
-            tokens.push({ word, start: match.index, end: match.index + word.length });
-          }
-          match = regex.exec(text);
-        }
+        const tokens = tokenizeRsvpText(text);
         if (!tokens.length) {
           setRsvpError("No readable text found on this page.");
           setRsvpIsLoading(false);
@@ -571,10 +680,10 @@ function App() {
   const handleRsvpStop = useCallback(() => {
     setRsvpIsPlaying(false);
     setRsvpIndex(0);
-    if (tabId !== null && rsvpTokens.length) {
+    if (rsvpCursorEnabled && tabId !== null && rsvpTokens.length) {
       sendRsvpCursorUpdate(tabId, rsvpTokens[0]!, { scrollIntoView: true });
     }
-  }, [rsvpTokens, sendRsvpCursorUpdate, tabId]);
+  }, [rsvpCursorEnabled, rsvpTokens, sendRsvpCursorUpdate, tabId]);
 
   useEffect(() => {
     if (!rsvpIsPlaying || rsvpTokens.length === 0) {
@@ -595,7 +704,7 @@ function App() {
   }, [rsvpIndex, rsvpIsPlaying, rsvpTokens.length, rsvpWpm]);
 
   useEffect(() => {
-    if (tabId === null || !rsvpTokens.length) {
+    if (!rsvpCursorEnabled || tabId === null || !rsvpTokens.length) {
       return;
     }
     const index = Math.min(rsvpIndex, rsvpTokens.length - 1);
@@ -604,7 +713,7 @@ function App() {
       return;
     }
     sendRsvpCursorUpdate(tabId, token, { scrollIntoView: rsvpIsPlaying });
-  }, [rsvpIndex, rsvpIsPlaying, rsvpTokens, sendRsvpCursorUpdate, tabId]);
+  }, [rsvpCursorEnabled, rsvpIndex, rsvpIsPlaying, rsvpTokens, sendRsvpCursorUpdate, tabId]);
 
   return (
     <div className="assist-ext-shell">

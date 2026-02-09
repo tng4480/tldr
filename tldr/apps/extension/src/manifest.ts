@@ -11,7 +11,7 @@ export default defineManifest(() => ({
     48: "tldr48.png",
     128: "tldr128.png",
   },
-  permissions: ["activeTab", "sidePanel", "storage", "scripting"],
+  permissions: ["activeTab", "sidePanel", "storage", "scripting", "contextMenus"],
   host_permissions: ["<all_urls>", "http://localhost:3000/*"],
   background: {
     service_worker: "src/background/serviceWorker.ts",

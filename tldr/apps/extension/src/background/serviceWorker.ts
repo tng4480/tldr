@@ -17,7 +17,9 @@ import type {
   LlmActionRequest,
   LlmActionResult,
   SidepanelConnect,
+  StartRsvpFromText,
 } from "../shared/messages";
+import { createRequestId } from "../shared/messages";
 import { error, log, runtimeLastError, warn } from "../shared/logger";
 
 type StoredExtensionToken = {
@@ -27,6 +29,8 @@ type StoredExtensionToken = {
 
 const tabState = new Map<number, { text?: string; lastHighlight?: HighlightClicked }>();
 const readyTabs = new Set<number>();
+const RSVP_CONTEXT_MENU_ID = "tldr-start-rsvp-selection";
+const pendingRsvpStartByTab = new Map<number, StartRsvpFromText>();
 const pendingByTab = new Map<
   number,
   {
@@ -265,6 +269,19 @@ function broadcastToSidepanel(message: ExtractResult | ApplyHighlightsAck | High
   chrome.runtime.sendMessage(message);
 }
 
+function trySendStartRsvp(message: StartRsvpFromText) {
+  chrome.runtime.sendMessage(message, () => {
+    const err = chrome.runtime.lastError;
+    if (err) {
+      // No receiver yet (sidepanel unopened) or the message port is otherwise unavailable.
+      log("bg", "StartRsvpFromText not delivered yet", { tabId: message.tabId, requestId: message.requestId, error: err.message });
+      return;
+    }
+    pendingRsvpStartByTab.delete(message.tabId);
+    log("bg", "StartRsvpFromText delivered", { tabId: message.tabId, requestId: message.requestId });
+  });
+}
+
 function markPending(
   tabId: number,
   message: ExtractRequest | ApplyHighlightsRequest | ApplyRsvpCursorRequest | ClearRsvpCursorRequest,
@@ -322,6 +339,51 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   resetTabReadiness(tabId);
   tabState.delete(tabId);
+  pendingRsvpStartByTab.delete(tabId);
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.removeAll(() => {
+    runtimeLastError("bg", "chrome.contextMenus.removeAll");
+    chrome.contextMenus.create(
+      {
+        id: RSVP_CONTEXT_MENU_ID,
+        title: "Start RSVP",
+        contexts: ["selection"],
+      },
+      () => runtimeLastError("bg", "chrome.contextMenus.create"),
+    );
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId !== RSVP_CONTEXT_MENU_ID) {
+    return;
+  }
+
+  const tabId = tab?.id;
+  if (typeof tabId !== "number") {
+    warn("bg", "Start RSVP clicked without tabId");
+    return;
+  }
+
+  const text = (info.selectionText ?? "").trim();
+  if (!text) {
+    return;
+  }
+
+  const message: StartRsvpFromText = {
+    type: "StartRsvpFromText",
+    requestId: createRequestId("rsvp-selection"),
+    tabId,
+    text,
+    source: "selection",
+  };
+
+  pendingRsvpStartByTab.set(tabId, message);
+
+  chrome.sidePanel.open({ tabId }, () => runtimeLastError("bg", "chrome.sidePanel.open"));
+  trySendStartRsvp(message);
 });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
@@ -418,6 +480,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
       tabState.set(resolvedTabId, tabState.get(resolvedTabId) ?? {});
     }
     log("bg", "SidepanelConnect", { resolvedTabId });
+    if (resolvedTabId !== undefined) {
+      const pending = pendingRsvpStartByTab.get(resolvedTabId);
+      if (pending) {
+        trySendStartRsvp(pending);
+      }
+    }
     sendResponse({ ok: true });
     return;
   }
