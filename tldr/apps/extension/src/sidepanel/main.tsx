@@ -13,7 +13,14 @@ import type {
 } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
-import { clampHighlightContrast, DEFAULT_HIGHLIGHT_CONTRAST, HIGHLIGHT_CONTRAST_KEY } from "../shared/settings";
+import {
+  clampHighlightContrast,
+  clampHighlightImportanceThreshold,
+  DEFAULT_HIGHLIGHT_CONTRAST,
+  DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD,
+  HIGHLIGHT_CONTRAST_KEY,
+  HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY,
+} from "../shared/settings";
 import "./sidepanel.css";
 
 function buildHighlights(text: string): HighlightSpan[] {
@@ -184,6 +191,9 @@ function App() {
   const [tabId, setTabId] = useState<number | null>(null);
   const [activePage, setActivePage] = useState<SidepanelPage>("tldr");
   const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
+  const [highlightImportanceThreshold, setHighlightImportanceThreshold] = useState<number>(
+    DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD,
+  );
   const [pageText, setPageText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [rsvpWpm, setRsvpWpm] = useState<number>(DEFAULT_RSVP_WPM);
@@ -226,6 +236,7 @@ function App() {
   });
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
   const contrastWriteTimeoutRef = useRef<number | null>(null);
+  const importanceWriteTimeoutRef = useRef<number | null>(null);
 
   const pendingExtractRef = useRef<{
     requestId: string;
@@ -352,22 +363,39 @@ function App() {
   }, []);
 
   useEffect(() => {
-    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY], (result) => {
+    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY], (result) => {
       setHighlightContrast(clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]));
+      setHighlightImportanceThreshold(clampHighlightImportanceThreshold((result as any)?.[HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY]));
     });
 
     const handler = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
       if (areaName !== "sync") {
         return;
       }
-      const change = (changes as any)?.[HIGHLIGHT_CONTRAST_KEY] as chrome.storage.StorageChange | undefined;
-      if (!change) {
-        return;
+
+      const contrastChange = (changes as any)?.[HIGHLIGHT_CONTRAST_KEY] as chrome.storage.StorageChange | undefined;
+      if (contrastChange) {
+        setHighlightContrast(clampHighlightContrast(contrastChange.newValue));
       }
-      setHighlightContrast(clampHighlightContrast(change.newValue));
+
+      const importanceChange = (changes as any)?.[HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY] as
+        | chrome.storage.StorageChange
+        | undefined;
+      if (importanceChange) {
+        setHighlightImportanceThreshold(clampHighlightImportanceThreshold(importanceChange.newValue));
+      }
     };
+
     chrome.storage.onChanged.addListener(handler);
-    return () => chrome.storage.onChanged.removeListener(handler);
+    return () => {
+      chrome.storage.onChanged.removeListener(handler);
+      if (contrastWriteTimeoutRef.current) {
+        window.clearTimeout(contrastWriteTimeoutRef.current);
+      }
+      if (importanceWriteTimeoutRef.current) {
+        window.clearTimeout(importanceWriteTimeoutRef.current);
+      }
+    };
   }, []);
 
   const loadAccountProfile = useCallback(async () => {
@@ -509,6 +537,17 @@ function App() {
     }, 120);
   }, []);
 
+  const handleImportanceThresholdChange = useCallback((value: number) => {
+    const next = clampHighlightImportanceThreshold(value);
+    setHighlightImportanceThreshold(next);
+    if (importanceWriteTimeoutRef.current) {
+      window.clearTimeout(importanceWriteTimeoutRef.current);
+    }
+    importanceWriteTimeoutRef.current = window.setTimeout(() => {
+      chrome.storage.sync.set({ [HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY]: next });
+    }, 120);
+  }, []);
+
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const id = tabs[0]?.id ?? null;
@@ -628,7 +667,10 @@ function App() {
         }
 
         const highlights = buildHighlights(extract.text ?? "");
-        if (!highlights.length) {
+        const filteredHighlights = highlights.filter(
+          (span) => (span.importance ?? DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD) >= highlightImportanceThreshold,
+        );
+        if (!filteredHighlights.length) {
           setHighlightState({ isLoading: false, error: "No highlight terms found.", count: null });
           return;
         }
@@ -637,7 +679,7 @@ function App() {
           type: "ApplyHighlightsRequest",
           requestId: createRequestId("highlight-terms"),
           tabId: activeId,
-          highlights,
+          highlights: filteredHighlights,
           highlightType: "keywords",
         });
       } catch (err) {
@@ -648,7 +690,7 @@ function App() {
         });
       }
     })();
-  }, [getActiveTabId, requestExtract]);
+  }, [getActiveTabId, highlightImportanceThreshold, requestExtract]);
 
   const handleKeyInfo = useCallback(() => {
     void (async () => {
@@ -817,6 +859,23 @@ function App() {
             {highlightState.count !== null && !highlightState.error ? (
               <div className="assist-ext-status">Highlighted {highlightState.count} keyword matches.</div>
             ) : null}
+            <div className="assist-ext-field">
+              <div className="assist-ext-field-row">
+                <div className="assist-ext-field-label">Highlight importance threshold</div>
+                <div className="assist-ext-field-value">{highlightImportanceThreshold}</div>
+              </div>
+              <input
+                className="assist-ext-range"
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={highlightImportanceThreshold}
+                onChange={(event) => handleImportanceThresholdChange(Number(event.currentTarget.value))}
+                aria-label="Highlight importance threshold"
+              />
+              <div className="assist-ext-meta">Higher values highlight fewer, more salient terms.</div>
+            </div>
           </section>
 
           <section className="assist-ext-section">

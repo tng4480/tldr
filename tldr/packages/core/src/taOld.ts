@@ -8,7 +8,6 @@ export type HighlightSpan = {
   text: string;
   start: number;
   end: number;
-  importance?: number;
 };
 
 const NEGATION_WORDS = new Set([
@@ -279,57 +278,7 @@ type TokenInfo = {
   isNumber: boolean;
 };
 
-type HighlightCandidateKind = "noun_chunk" | "secondary_propn" | "secondary_numeric" | "secondary_adj" | "negation";
-
-type HighlightCandidate = HighlightSpan & {
-  hasProper: boolean;
-  tokenCount: number;
-  containsPropn: boolean;
-  endsWithNoun: boolean;
-  hasContiguousPropnPair: boolean;
-  isNumericLike: boolean;
-  hasUnitOrAdjacentNoun: boolean;
-  isStandaloneAdj: boolean;
-  isAdjectiveHeavy: boolean;
-  kind: HighlightCandidateKind;
-};
-
-function scorePosOnlyCandidate(candidate: HighlightCandidate): number {
-  let score = 40;
-
-  if (candidate.kind === "noun_chunk") {
-    if (candidate.containsPropn) {
-      score = 92;
-    } else if (candidate.isAdjectiveHeavy) {
-      score = 74;
-    } else if (candidate.endsWithNoun) {
-      score = 82;
-    } else {
-      score = 74;
-    }
-
-    if (candidate.hasContiguousPropnPair) {
-      score += 4;
-    }
-    if (candidate.endsWithNoun) {
-      score += 3;
-    }
-    if (candidate.tokenCount > 4) {
-      score -= 2 * (candidate.tokenCount - 4);
-    }
-  } else if (candidate.kind === "secondary_propn") {
-    score = 70;
-  } else if (candidate.kind === "secondary_numeric") {
-    score = candidate.hasUnitOrAdjacentNoun ? 68 : 64;
-  } else if (candidate.kind === "secondary_adj") {
-    score = 52;
-    if (candidate.isStandaloneAdj) {
-      score -= 6;
-    }
-  }
-
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
+type HighlightCandidate = HighlightSpan & { hasProper: boolean };
 
 function buildTokenIndex(text: string): { tokens: TokenInfo[]; sentences: Array<[number, number]> } {
   const doc = nlp.readDoc(text);
@@ -489,15 +438,6 @@ function addLeadingNegations(
       start: token.start,
       end: token.end,
       hasProper: false,
-      tokenCount: 1,
-      containsPropn: false,
-      endsWithNoun: false,
-      hasContiguousPropnPair: false,
-      isNumericLike: false,
-      hasUnitOrAdjacentNoun: false,
-      isStandaloneAdj: false,
-      isAdjectiveHeavy: false,
-      kind: "negation",
     });
   }
 
@@ -608,24 +548,6 @@ function isNumberWord(token: TokenInfo): boolean {
   return false;
 }
 
-function findPreviousWordToken(tokens: TokenInfo[], index: number): TokenInfo | null {
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    if (tokens[cursor].type === "word") {
-      return tokens[cursor];
-    }
-  }
-  return null;
-}
-
-function findNextWordToken(tokens: TokenInfo[], index: number): TokenInfo | null {
-  for (let cursor = index + 1; cursor < tokens.length; cursor += 1) {
-    if (tokens[cursor].type === "word") {
-      return tokens[cursor];
-    }
-  }
-  return null;
-}
-
 function dedupeOverlappingSpans(candidates: HighlightCandidate[]): HighlightCandidate[] {
   const sorted = [...candidates].sort((a, b) => {
     if (a.start !== b.start) {
@@ -712,28 +634,12 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
         index = cursor - 1;
         continue;
       }
-      const containsPropn = phraseTokens.some((token) => token.pos === "PROPN");
-      const endsWithNoun = phraseTokens[phraseTokens.length - 1]?.pos === "NOUN";
-      const hasContiguousPropnPair = phraseTokens.some(
-        (token, tokenIndex) => token.pos === "PROPN" && phraseTokens[tokenIndex + 1]?.pos === "PROPN",
-      );
-      const adjectiveCount = phraseTokens.filter((token) => token.pos === "ADJ").length;
-      const nominalCount = phraseTokens.filter((token) => token.pos === "NOUN" || token.pos === "PROPN").length;
 
       nounChunkCandidates.push({
         text: phrase,
         start,
         end,
-        hasProper: containsPropn,
-        tokenCount: phraseTokens.length,
-        containsPropn,
-        endsWithNoun,
-        hasContiguousPropnPair,
-        isNumericLike: false,
-        hasUnitOrAdjacentNoun: false,
-        isStandaloneAdj: false,
-        isAdjectiveHeavy: adjectiveCount >= nominalCount,
-        kind: "noun_chunk",
+        hasProper: phraseTokens.some((token) => token.pos === "PROPN"),
       });
       index = cursor - 1;
     }
@@ -757,9 +663,6 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
     if (!shouldHighlightSecondary) {
       continue;
     }
-    const previousWord = findPreviousWordToken(tokens, index);
-    const nextWord = findNextWordToken(tokens, index);
-    const hasAdjacentNoun = previousWord?.pos === "NOUN" || nextWord?.pos === "NOUN";
 
     const spanStart = token.isNumber ? (token.numberStart ?? token.start) : token.start;
     const spanEnd = token.isNumber ? (token.numberEnd ?? token.end) : token.end;
@@ -780,29 +683,11 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
       continue;
     }
     seenSecondary.add(key);
-    const nextToken = tokens[index + 1];
-    const hasImmediateUnit =
-      Boolean(nextToken) && isUnitLikeToken(nextToken) && text.slice(token.end, nextToken.start).trim().length === 0;
-    const hasUnitSuffix =
-      token.isNumber &&
-      (token.numberEnd ?? token.end) < token.end &&
-      Boolean(trimSpanToAllowed(text, token.numberEnd ?? token.end, token.end, /[\p{L}%\u00b5\u03bc\u00b0]/u));
-    const hasUnitOrAdjacentNoun = isNumericLike && (hasAdjacentNoun || hasImmediateUnit || hasUnitSuffix);
-
     secondaryHighlights.push({
       text: text.slice(highlightStart, highlightEnd),
       start: highlightStart,
       end: highlightEnd,
       hasProper: token.pos === "PROPN",
-      tokenCount: 1,
-      containsPropn: token.pos === "PROPN",
-      endsWithNoun: false,
-      hasContiguousPropnPair: false,
-      isNumericLike,
-      hasUnitOrAdjacentNoun,
-      isStandaloneAdj: token.pos === "ADJ",
-      isAdjectiveHeavy: false,
-      kind: token.pos === "PROPN" ? "secondary_propn" : isNumericLike ? "secondary_numeric" : "secondary_adj",
     });
 
     if (!isNumericLike) {
@@ -825,15 +710,6 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
                 start: unitStart,
                 end: unitEnd,
                 hasProper: false,
-                tokenCount: 1,
-                containsPropn: false,
-                endsWithNoun: false,
-                hasContiguousPropnPair: false,
-                isNumericLike: true,
-                hasUnitOrAdjacentNoun: true,
-                isStandaloneAdj: false,
-                isAdjectiveHeavy: false,
-                kind: "secondary_numeric",
               });
             }
           }
@@ -857,15 +733,6 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
                 start: unitStart,
                 end: unitEnd,
                 hasProper: false,
-                tokenCount: 1,
-                containsPropn: false,
-                endsWithNoun: false,
-                hasContiguousPropnPair: false,
-                isNumericLike: true,
-                hasUnitOrAdjacentNoun: true,
-                isStandaloneAdj: false,
-                isAdjectiveHeavy: false,
-                kind: "secondary_numeric",
               });
             }
           }
@@ -890,12 +757,7 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
       }
       return 0;
     })
-    .map((candidate) => ({
-      text: candidate.text,
-      start: candidate.start,
-      end: candidate.end,
-      importance: scorePosOnlyCandidate(candidate),
-    }));
+    .map(({ text: spanText, start, end }) => ({ text: spanText, start, end }));
 }
 
 export function extractDateHighlights(text: string, maxMatches = 12): string[] {
