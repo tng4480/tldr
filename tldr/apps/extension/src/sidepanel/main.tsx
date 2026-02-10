@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { HighlightSpan } from "@tldr/core";
-import { computeSpacyStyleHighlights, extractDateHighlights } from "@tldr/core";
+import { computeSpacyStyleHighlights, computeSpacyStyleHighlightsOld, extractDateHighlights } from "@tldr/core";
 import type {
   ApplyHighlightsAck,
   ApplyRsvpCursorRequest,
@@ -14,22 +14,27 @@ import type {
 import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
 import {
+  clampHighlightAlgorithm,
   clampHighlightContrast,
   clampHighlightImportanceThreshold,
+  DEFAULT_HIGHLIGHT_ALGORITHM,
   DEFAULT_HIGHLIGHT_CONTRAST,
   DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD,
+  HIGHLIGHT_ALGORITHM_KEY,
   HIGHLIGHT_CONTRAST_KEY,
   HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY,
+  type HighlightAlgorithm,
 } from "../shared/settings";
 import "./sidepanel.css";
 
-function buildHighlights(text: string): HighlightSpan[] {
+function buildHighlights(text: string, algorithm: HighlightAlgorithm): HighlightSpan[] {
   const trimmed = text.trim();
   if (!trimmed) {
     return [];
   }
 
-  const highlightSpans = computeSpacyStyleHighlights(trimmed);
+  const highlightSpans =
+    algorithm === "old" ? computeSpacyStyleHighlightsOld(trimmed) : computeSpacyStyleHighlights(trimmed);
   const dateTerms = extractDateHighlights(trimmed, 24);
 
   const dateSpans: HighlightSpan[] = [];
@@ -191,6 +196,7 @@ function App() {
   const [tabId, setTabId] = useState<number | null>(null);
   const [activePage, setActivePage] = useState<SidepanelPage>("tldr");
   const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
+  const [highlightAlgorithm, setHighlightAlgorithm] = useState<HighlightAlgorithm>(DEFAULT_HIGHLIGHT_ALGORITHM);
   const [highlightImportanceThreshold, setHighlightImportanceThreshold] = useState<number>(
     DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD,
   );
@@ -236,6 +242,7 @@ function App() {
   });
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
   const contrastWriteTimeoutRef = useRef<number | null>(null);
+  const algorithmWriteTimeoutRef = useRef<number | null>(null);
   const importanceWriteTimeoutRef = useRef<number | null>(null);
 
   const pendingExtractRef = useRef<{
@@ -363,8 +370,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY], (result) => {
+    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, HIGHLIGHT_ALGORITHM_KEY, HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY], (result) => {
       setHighlightContrast(clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]));
+      setHighlightAlgorithm(clampHighlightAlgorithm((result as any)?.[HIGHLIGHT_ALGORITHM_KEY]));
       setHighlightImportanceThreshold(clampHighlightImportanceThreshold((result as any)?.[HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY]));
     });
 
@@ -376,6 +384,11 @@ function App() {
       const contrastChange = (changes as any)?.[HIGHLIGHT_CONTRAST_KEY] as chrome.storage.StorageChange | undefined;
       if (contrastChange) {
         setHighlightContrast(clampHighlightContrast(contrastChange.newValue));
+      }
+
+      const algorithmChange = (changes as any)?.[HIGHLIGHT_ALGORITHM_KEY] as chrome.storage.StorageChange | undefined;
+      if (algorithmChange) {
+        setHighlightAlgorithm(clampHighlightAlgorithm(algorithmChange.newValue));
       }
 
       const importanceChange = (changes as any)?.[HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY] as
@@ -391,6 +404,9 @@ function App() {
       chrome.storage.onChanged.removeListener(handler);
       if (contrastWriteTimeoutRef.current) {
         window.clearTimeout(contrastWriteTimeoutRef.current);
+      }
+      if (algorithmWriteTimeoutRef.current) {
+        window.clearTimeout(algorithmWriteTimeoutRef.current);
       }
       if (importanceWriteTimeoutRef.current) {
         window.clearTimeout(importanceWriteTimeoutRef.current);
@@ -537,6 +553,17 @@ function App() {
     }, 120);
   }, []);
 
+  const handleHighlightAlgorithmChange = useCallback((algorithm: HighlightAlgorithm) => {
+    const next = clampHighlightAlgorithm(algorithm);
+    setHighlightAlgorithm(next);
+    if (algorithmWriteTimeoutRef.current) {
+      window.clearTimeout(algorithmWriteTimeoutRef.current);
+    }
+    algorithmWriteTimeoutRef.current = window.setTimeout(() => {
+      chrome.storage.sync.set({ [HIGHLIGHT_ALGORITHM_KEY]: next });
+    }, 120);
+  }, []);
+
   const handleImportanceThresholdChange = useCallback((value: number) => {
     const next = clampHighlightImportanceThreshold(value);
     setHighlightImportanceThreshold(next);
@@ -666,10 +693,11 @@ function App() {
           return;
         }
 
-        const highlights = buildHighlights(extract.text ?? "");
-        const filteredHighlights = highlights.filter(
-          (span) => (span.importance ?? DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD) >= highlightImportanceThreshold,
-        );
+        const highlights = buildHighlights(extract.text ?? "", highlightAlgorithm);
+        const filteredHighlights =
+          highlightAlgorithm === "new"
+            ? highlights.filter((span) => (span.importance ?? DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD) >= highlightImportanceThreshold)
+            : highlights;
         if (!filteredHighlights.length) {
           setHighlightState({ isLoading: false, error: "No highlight terms found.", count: null });
           return;
@@ -690,7 +718,7 @@ function App() {
         });
       }
     })();
-  }, [getActiveTabId, highlightImportanceThreshold, requestExtract]);
+  }, [getActiveTabId, highlightAlgorithm, highlightImportanceThreshold, requestExtract]);
 
   const handleKeyInfo = useCallback(() => {
     void (async () => {
@@ -859,23 +887,27 @@ function App() {
             {highlightState.count !== null && !highlightState.error ? (
               <div className="assist-ext-status">Highlighted {highlightState.count} keyword matches.</div>
             ) : null}
-            <div className="assist-ext-field">
-              <div className="assist-ext-field-row">
-                <div className="assist-ext-field-label">Highlight importance threshold</div>
-                <div className="assist-ext-field-value">{highlightImportanceThreshold}</div>
+            {highlightAlgorithm === "new" ? (
+              <div className="assist-ext-field">
+                <div className="assist-ext-field-row">
+                  <div className="assist-ext-field-label">Highlight importance threshold</div>
+                  <div className="assist-ext-field-value">{highlightImportanceThreshold}</div>
+                </div>
+                <input
+                  className="assist-ext-range"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={highlightImportanceThreshold}
+                  onChange={(event) => handleImportanceThresholdChange(Number(event.currentTarget.value))}
+                  aria-label="Highlight importance threshold"
+                />
+                <div className="assist-ext-meta">Higher values highlight fewer, more salient terms.</div>
               </div>
-              <input
-                className="assist-ext-range"
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={highlightImportanceThreshold}
-                onChange={(event) => handleImportanceThresholdChange(Number(event.currentTarget.value))}
-                aria-label="Highlight importance threshold"
-              />
-              <div className="assist-ext-meta">Higher values highlight fewer, more salient terms.</div>
-            </div>
+            ) : (
+              <div className="assist-ext-meta">Legacy highlighting is active; importance threshold is unavailable.</div>
+            )}
           </section>
 
           <section className="assist-ext-section">
@@ -1018,6 +1050,30 @@ function App() {
               </div>
             ) : null
           ) : null}
+
+          <div className="assist-ext-field">
+            <div className="assist-ext-field-row">
+              <div className="assist-ext-field-label">Keyword highlight algorithm</div>
+              <div className="assist-ext-field-value">{highlightAlgorithm === "new" ? "New" : "Old"}</div>
+            </div>
+            <div className="assist-ext-segmented" role="group" aria-label="Keyword highlight algorithm">
+              <button
+                className={`assist-ext-segment ${highlightAlgorithm === "old" ? "assist-ext-segment--active" : ""}`}
+                onClick={() => handleHighlightAlgorithmChange("old")}
+              >
+                Old (no slider)
+              </button>
+              <button
+                className={`assist-ext-segment ${highlightAlgorithm === "new" ? "assist-ext-segment--active" : ""}`}
+                onClick={() => handleHighlightAlgorithmChange("new")}
+              >
+                New (with slider)
+              </button>
+            </div>
+            <div className="assist-ext-meta">
+              Old uses legacy keyword spans. New uses POS-based importance scoring with a threshold slider.
+            </div>
+          </div>
 
           <div className="assist-ext-field">
             <div className="assist-ext-field-row">

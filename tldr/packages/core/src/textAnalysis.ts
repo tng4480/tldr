@@ -664,7 +664,7 @@ function dedupeOverlappingSpans(candidates: HighlightCandidate[]): HighlightCand
  * Note: wink-nlp lacks dependency parsing, so we approximate noun chunks with
  * (ADJ)* + (NOUN|PROPN)+ patterns confined to sentence boundaries.
  */
-export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
+function computeSpacyStyleHighlightsInternal(text: string, includeImportance: boolean): HighlightSpan[] {
   const trimmed = text.trim();
   if (!trimmed) {
     return [];
@@ -890,12 +890,28 @@ export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
       }
       return 0;
     })
-    .map((candidate) => ({
-      text: candidate.text,
-      start: candidate.start,
-      end: candidate.end,
-      importance: scorePosOnlyCandidate(candidate),
-    }));
+    .map((candidate) =>
+      includeImportance
+        ? {
+            text: candidate.text,
+            start: candidate.start,
+            end: candidate.end,
+            importance: scorePosOnlyCandidate(candidate),
+          }
+        : {
+            text: candidate.text,
+            start: candidate.start,
+            end: candidate.end,
+          },
+    );
+}
+
+export function computeSpacyStyleHighlightsOld(text: string): HighlightSpan[] {
+  return computeSpacyStyleHighlightsInternal(text, false);
+}
+
+export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
+  return computeSpacyStyleHighlightsInternal(text, true);
 }
 
 export function extractDateHighlights(text: string, maxMatches = 12): string[] {
