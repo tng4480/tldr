@@ -63,6 +63,13 @@ const RSVP_CONTEXT_WINDOW = 8;
 
 type RsvpToken = { word: string; start: number; end: number };
 type SelectionMatch = { start: number; end: number };
+type SidepanelPage = "tldr" | "account";
+type AccountProfile = {
+  plan: string;
+  monthly_usage: number;
+  monthly_limit: number;
+  subscription_status?: string | null;
+};
 
 function getAnchorIndex(word: string): number {
   const length = word.length;
@@ -175,6 +182,7 @@ function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
   const [tabId, setTabId] = useState<number | null>(null);
+  const [activePage, setActivePage] = useState<SidepanelPage>("tldr");
   const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
   const [pageText, setPageText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -205,6 +213,15 @@ function App() {
   );
   const [keyInfoState, setKeyInfoState] = useState<{ isLoading: boolean; error: string | null }>({
     isLoading: false,
+    error: null,
+  });
+  const [accountState, setAccountState] = useState<{
+    isLoading: boolean;
+    profile: AccountProfile | null;
+    error: string | null;
+  }>({
+    isLoading: false,
+    profile: null,
     error: null,
   });
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
@@ -353,6 +370,45 @@ function App() {
     return () => chrome.storage.onChanged.removeListener(handler);
   }, []);
 
+  const loadAccountProfile = useCallback(async () => {
+    if (!authState.isAuthenticated) {
+      setAccountState({ isLoading: false, profile: null, error: null });
+      return;
+    }
+
+    setAccountState((prev) => ({ ...prev, isLoading: true, error: null }));
+    try {
+      const response = await fetch(`${apiBase}/api/account`, { credentials: "include" });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: unknown;
+        profile?: Record<string, unknown>;
+      };
+
+      if (!response.ok || !data.profile) {
+        const message = typeof data.error === "string" ? data.error : "Unable to load account.";
+        throw new Error(message);
+      }
+
+      const profile = data.profile;
+      setAccountState({
+        isLoading: false,
+        error: null,
+        profile: {
+          plan: typeof profile.plan === "string" ? profile.plan : "free",
+          monthly_usage: typeof profile.monthly_usage === "number" ? profile.monthly_usage : 0,
+          monthly_limit: typeof profile.monthly_limit === "number" ? profile.monthly_limit : 0,
+          subscription_status: typeof profile.subscription_status === "string" ? profile.subscription_status : null,
+        },
+      });
+    } catch (err) {
+      setAccountState({
+        isLoading: false,
+        profile: null,
+        error: err instanceof Error ? err.message : "Unable to load account.",
+      });
+    }
+  }, [apiBase, authState.isAuthenticated]);
+
   useEffect(() => {
     const handler = (message: ExtractResult | ApplyHighlightsAck | LlmActionResult | StartRsvpFromText) => {
       if (!message?.type) {
@@ -402,9 +458,9 @@ function App() {
               return;
             }
 
-            const pageText = extract.text ?? "";
-            const pageTokens = tokenizeRsvpText(pageText);
-            const selectionMatch = findSelectionInText(pageText, text);
+            const fullText = extract.text ?? "";
+            const pageTokens = tokenizeRsvpText(fullText);
+            const selectionMatch = findSelectionInText(fullText, text);
 
             if (pageTokens.length && selectionMatch) {
               const startIndex = findTokenIndexForOffset(pageTokens, selectionMatch.start);
@@ -495,6 +551,14 @@ function App() {
       },
     );
   }, []);
+
+  useEffect(() => {
+    if (!authState.isAuthenticated) {
+      setAccountState({ isLoading: false, profile: null, error: null });
+      return;
+    }
+    void loadAccountProfile();
+  }, [authState.isAuthenticated, loadAccountProfile]);
 
   const handleSignIn = useCallback(() => {
     chrome.tabs.create({ url: `${apiBase}/api/auth/signin` }, () => runtimeLastError("sp", "chrome.tabs.create sign-in"));
@@ -717,177 +781,207 @@ function App() {
 
   return (
     <div className="assist-ext-shell">
-      <header className="assist-ext-header">
-        <div>
-          <h1 className="assist-ext-title">TLDR</h1>
-          <p className="assist-ext-subtitle">Reading assistant</p>
-        </div>
-        <span className="assist-ext-pill">Side panel</span>
-      </header>
+      <div className="assist-ext-segmented" role="tablist" aria-label="Side panel pages">
+        <button
+          className={`assist-ext-segment ${activePage === "tldr" ? "assist-ext-segment--active" : ""}`}
+          onClick={() => setActivePage("tldr")}
+          role="tab"
+          aria-selected={activePage === "tldr"}
+        >
+          TLDR
+        </button>
+        <button
+          className={`assist-ext-segment ${activePage === "account" ? "assist-ext-segment--active" : ""}`}
+          onClick={() => setActivePage("account")}
+          role="tab"
+          aria-selected={activePage === "account"}
+        >
+          Account
+        </button>
+      </div>
 
-      <section className="assist-ext-section">
-        <div className="assist-ext-section-title">Connection</div>
-        <div className="assist-ext-row">
-          <span className="assist-ext-status">
-            {authState.isAuthenticated
-              ? `Connected${authState.expiresAt ? ` (expires ${new Date(authState.expiresAt).toLocaleDateString()})` : ""}`
-              : "Not connected (highlights only)."}
-          </span>
-          {authState.isAuthenticated ? (
-            <button className="assist-ext-button assist-ext-button--danger" onClick={handleDisconnect} disabled={authState.isLoading}>
-              Disconnect
-            </button>
-          ) : (
-            <>
-              <button className="assist-ext-button assist-ext-button--accent" onClick={handleSignIn} disabled={authState.isLoading}>
-                Sign in
+      {activePage === "tldr" ? (
+        <>
+          <section className="assist-ext-section">
+            <div className="assist-ext-section-title">Actions</div>
+            <div className="assist-ext-segmented" role="group" aria-label="Page actions">
+              <button className="assist-ext-segment" onClick={handleHighlightKeywords}>
+                {highlightState.isLoading ? "Highlighting..." : "Highlight keywords"}
               </button>
-              <button className="assist-ext-button" onClick={handleConnect} disabled={authState.isLoading}>
-                Connect extension
+              <button className="assist-ext-segment" onClick={handleKeyInfo} disabled={!authState.isAuthenticated}>
+                {keyInfoState.isLoading ? "Extracting..." : "Extract key info"}
               </button>
-            </>
-          )}
-        </div>
-        {authState.error ? <div className="assist-ext-error">{authState.error}</div> : null}
-      </section>
-
-      <section className="assist-ext-section">
-        <div className="assist-ext-section-title">Actions</div>
-        <div className="assist-ext-segmented" role="group" aria-label="Page actions">
-          <button className="assist-ext-segment" onClick={handleHighlightKeywords}>
-            {highlightState.isLoading ? "Highlighting…" : "Highlight keywords"}
-          </button>
-          <button className="assist-ext-segment" onClick={handleKeyInfo} disabled={!authState.isAuthenticated}>
-            {keyInfoState.isLoading ? "Extracting…" : "Extract key info"}
-          </button>
-        </div>
-        <div className="assist-ext-field">
-          <div className="assist-ext-field-row">
-            <div className="assist-ext-field-label">Highlight contrast</div>
-            <div className="assist-ext-field-value">{highlightContrast}%</div>
-          </div>
-          <input
-            className="assist-ext-range"
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={highlightContrast}
-            onChange={(event) => handleContrastChange(Number(event.currentTarget.value))}
-            aria-label="Highlight contrast"
-          />
-          <div className="assist-ext-meta">Higher values dim non-highlighted text more.</div>
-        </div>
-        {error ? <div className="assist-ext-error">{error}</div> : null}
-        {highlightState.error ? <div className="assist-ext-error">{highlightState.error}</div> : null}
-        {highlightState.count !== null && !highlightState.error ? (
-          <div className="assist-ext-status">Highlighted {highlightState.count} keyword matches.</div>
-        ) : null}
-      </section>
-
-      <section className="assist-ext-section">
-        <div className="assist-ext-section-title">Rapid serial visual presentation</div>
-        <div className="assist-ext-rsvp-display" aria-live="polite">
-          <span className="assist-ext-rsvp-left">{rsvpDisplay.left}</span>
-          <span className="assist-ext-rsvp-anchor" aria-hidden={rsvpDisplay.anchor === ""}>
-            {rsvpDisplay.anchor || "·"}
-          </span>
-          <span className="assist-ext-rsvp-right">{rsvpDisplay.right}</span>
-        </div>
-        {/* {rsvpContext ? (
-          <div className="assist-ext-rsvp-cursor" aria-label="RSVP text cursor" aria-live="polite">
-            {rsvpContext.hasPrefix ? <span aria-hidden="true">… </span> : null}
-            {rsvpContext.before.length ? <span>{rsvpContext.before.join(" ")} </span> : null}
-            <span className="assist-ext-rsvp-cursor-current">{rsvpContext.current}</span>
-            {rsvpContext.after.length ? <span> {rsvpContext.after.join(" ")}</span> : null}
-            {rsvpContext.hasSuffix ? <span aria-hidden="true"> …</span> : null}
-          </div>
-        ) : null} */}
-        <div className="assist-ext-row">
-          <button className="assist-ext-button assist-ext-button--accent" onClick={handleRsvpStart} disabled={rsvpIsLoading}>
-            {rsvpIsLoading ? "Loading…" : "Start"}
-          </button>
-          <button className="assist-ext-button" onClick={handleRsvpToggle} disabled={!rsvpTokens.length}>
-            {rsvpIsPlaying ? "Pause" : "Resume"}
-          </button>
-          <button className="assist-ext-button" onClick={handleRsvpStop} disabled={!rsvpTokens.length}>
-            Reset
-          </button>
-        </div>
-        <div className="assist-ext-field">
-          <div className="assist-ext-field-row">
-            <div className="assist-ext-field-label">Words per minute</div>
-            <div className="assist-ext-field-value">{rsvpWpm}</div>
-          </div>
-          <input
-            className="assist-ext-range"
-            type="range"
-            min={150}
-            max={700}
-            step={10}
-            value={rsvpWpm}
-            onChange={(event) => setRsvpWpm(Number(event.currentTarget.value))}
-            aria-label="Words per minute"
-          />
-          <div className="assist-ext-meta">The highlighted anchor letter stays fixed to speed up reading.</div>
-        </div>
-        {rsvpError ? <div className="assist-ext-error">{rsvpError}</div> : null}
-      </section>
-
-      <section className="assist-ext-section">
-        <div className="assist-ext-section-title">Key information</div>
-        {keyInfoState.isLoading ? (
-          <div className="assist-ext-status">Extracting key info…</div>
-        ) : keyInfoPayload ? (
-          <div className="assist-ext-callout">
-            {["Important dates", "Things to do", "Things to know"].map((heading) => {
-              const items = Array.isArray((keyInfoPayload.sections as any)[heading])
-                ? ((keyInfoPayload.sections as any)[heading] as string[])
-                : [];
-              return (
-                <div key={heading} className="assist-ext-subsection">
-                  <div className="assist-ext-section-title">{heading}</div>
-                  <ul className="assist-ext-list">
-                    {(items.length ? items : ["None"]).map((item, index) => (
-                      <li key={`${heading}-${index}`} style={{ whiteSpace: "pre-wrap" }}>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-
-            {keyInfoPayload.events?.length ? (
-              <div className="assist-ext-subsection">
-                <div className="assist-ext-section-title">Add to calendar</div>
-                <ul className="assist-ext-list">
-                  {keyInfoPayload.events
-                    .filter((event) => typeof event?.calendarUrl === "string" && event.calendarUrl.length > 0)
-                    .map((event, index) => (
-                      <li key={`${event.title ?? "event"}-${index}`}>
-                        <a href={event.calendarUrl as string} target="_blank" rel="noreferrer" className="assist-ext-link">
-                          {event.title ?? "Open in Google Calendar"}
-                        </a>
-                      </li>
-                    ))}
-                </ul>
-              </div>
+            </div>
+            {error ? <div className="assist-ext-error">{error}</div> : null}
+            {highlightState.error ? <div className="assist-ext-error">{highlightState.error}</div> : null}
+            {highlightState.count !== null && !highlightState.error ? (
+              <div className="assist-ext-status">Highlighted {highlightState.count} keyword matches.</div>
             ) : null}
+          </section>
+
+          <section className="assist-ext-section">
+            <div className="assist-ext-section-title">Rapid serial visual presentation</div>
+            <div className="assist-ext-rsvp-display" aria-live="polite">
+              <span className="assist-ext-rsvp-left">{rsvpDisplay.left}</span>
+              <span className="assist-ext-rsvp-anchor" aria-hidden={rsvpDisplay.anchor === ""}>
+                {rsvpDisplay.anchor || "."}
+              </span>
+              <span className="assist-ext-rsvp-right">{rsvpDisplay.right}</span>
+            </div>
+            <div className="assist-ext-row">
+              <button className="assist-ext-button assist-ext-button--accent" onClick={handleRsvpStart} disabled={rsvpIsLoading}>
+                {rsvpIsLoading ? "Loading..." : "Start"}
+              </button>
+              <button className="assist-ext-button" onClick={handleRsvpToggle} disabled={!rsvpTokens.length}>
+                {rsvpIsPlaying ? "Pause" : "Resume"}
+              </button>
+              <button className="assist-ext-button" onClick={handleRsvpStop} disabled={!rsvpTokens.length}>
+                Reset
+              </button>
+            </div>
+            <div className="assist-ext-field">
+              <div className="assist-ext-field-row">
+                <div className="assist-ext-field-label">Words per minute</div>
+                <div className="assist-ext-field-value">{rsvpWpm}</div>
+              </div>
+              <input
+                className="assist-ext-range"
+                type="range"
+                min={150}
+                max={700}
+                step={10}
+                value={rsvpWpm}
+                onChange={(event) => setRsvpWpm(Number(event.currentTarget.value))}
+                aria-label="Words per minute"
+              />
+              <div className="assist-ext-meta">The highlighted anchor letter stays fixed to speed up reading.</div>
+            </div>
+            {rsvpError ? <div className="assist-ext-error">{rsvpError}</div> : null}
+          </section>
+
+          <section className="assist-ext-section">
+            <div className="assist-ext-section-title">Key information</div>
+            {keyInfoState.isLoading ? (
+              <div className="assist-ext-status">Extracting key info...</div>
+            ) : keyInfoPayload ? (
+              <div className="assist-ext-callout">
+                {["Important dates", "Things to do", "Things to know"].map((heading) => {
+                  const items = Array.isArray((keyInfoPayload.sections as any)[heading])
+                    ? ((keyInfoPayload.sections as any)[heading] as string[])
+                    : [];
+                  return (
+                    <div key={heading} className="assist-ext-subsection">
+                      <div className="assist-ext-section-title">{heading}</div>
+                      <ul className="assist-ext-list">
+                        {(items.length ? items : ["None"]).map((item, index) => (
+                          <li key={`${heading}-${index}`} style={{ whiteSpace: "pre-wrap" }}>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+
+                {keyInfoPayload.events?.length ? (
+                  <div className="assist-ext-subsection">
+                    <div className="assist-ext-section-title">Add to calendar</div>
+                    <ul className="assist-ext-list">
+                      {keyInfoPayload.events
+                        .filter((event) => typeof event?.calendarUrl === "string" && event.calendarUrl.length > 0)
+                        .map((event, index) => (
+                          <li key={`${event.title ?? "event"}-${index}`}>
+                            <a href={event.calendarUrl as string} target="_blank" rel="noreferrer" className="assist-ext-link">
+                              {event.title ?? "Open in Google Calendar"}
+                            </a>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : keyInfoResult ? (
+              <ul className="assist-ext-list">
+                {keyInfoLines.map((line, index) => (
+                  <li key={`${line}-${index}`} style={{ whiteSpace: "pre-wrap" }}>
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="assist-ext-status">Run the key info tool to see the most important points.</div>
+            )}
+            {keyInfoState.error ? <div className="assist-ext-error">{keyInfoState.error}</div> : null}
+          </section>
+        </>
+      ) : (
+        <section className="assist-ext-section">
+          <div className="assist-ext-section-title">Account</div>
+          <div className="assist-ext-row">
+            <span className="assist-ext-status">
+              {authState.isAuthenticated
+                ? `Connected${authState.expiresAt ? ` (expires ${new Date(authState.expiresAt).toLocaleDateString()})` : ""}`
+                : "Not connected (highlights only)."}
+            </span>
+            {authState.isAuthenticated ? (
+              <button className="assist-ext-button assist-ext-button--danger" onClick={handleDisconnect} disabled={authState.isLoading}>
+                Disconnect
+              </button>
+            ) : (
+              <>
+                <button className="assist-ext-button assist-ext-button--accent" onClick={handleSignIn} disabled={authState.isLoading}>
+                  Sign in
+                </button>
+                <button className="assist-ext-button" onClick={handleConnect} disabled={authState.isLoading}>
+                  Connect extension
+                </button>
+              </>
+            )}
           </div>
-        ) : keyInfoResult ? (
-          <ul className="assist-ext-list">
-            {keyInfoLines.map((line, index) => (
-              <li key={`${line}-${index}`} style={{ whiteSpace: "pre-wrap" }}>
-                {line}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="assist-ext-status">Run the key info tool to see the most important points.</div>
-        )}
-        {keyInfoState.error ? <div className="assist-ext-error">{keyInfoState.error}</div> : null}
-      </section>
+
+          {authState.isAuthenticated ? (
+            accountState.isLoading ? (
+              <div className="assist-ext-status">Loading account details...</div>
+            ) : accountState.profile ? (
+              <div className="assist-ext-field">
+                <div className="assist-ext-field-row">
+                  <div className="assist-ext-field-label">Plan</div>
+                  <div className="assist-ext-field-value">{accountState.profile.plan}</div>
+                </div>
+                <div className="assist-ext-field-row">
+                  <div className="assist-ext-field-label">Monthly usage</div>
+                  <div className="assist-ext-field-value">{accountState.profile.monthly_usage}</div>
+                </div>
+                <div className="assist-ext-field-row">
+                  <div className="assist-ext-field-label">Limit</div>
+                  <div className="assist-ext-field-value">{accountState.profile.monthly_limit}</div>
+                </div>
+              </div>
+            ) : null
+          ) : null}
+
+          <div className="assist-ext-field">
+            <div className="assist-ext-field-row">
+              <div className="assist-ext-field-label">Highlight contrast</div>
+              <div className="assist-ext-field-value">{highlightContrast}%</div>
+            </div>
+            <input
+              className="assist-ext-range"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={highlightContrast}
+              onChange={(event) => handleContrastChange(Number(event.currentTarget.value))}
+              aria-label="Highlight contrast"
+            />
+            <div className="assist-ext-meta">Higher values dim non-highlighted text more.</div>
+          </div>
+
+          {authState.error ? <div className="assist-ext-error">{authState.error}</div> : null}
+          {accountState.error ? <div className="assist-ext-error">{accountState.error}</div> : null}
+        </section>
+      )}
 
     </div>
   );
