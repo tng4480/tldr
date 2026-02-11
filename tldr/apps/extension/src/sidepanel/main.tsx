@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { HighlightSpan } from "@tldr/core";
-import { computeSpacyStyleHighlights, computeSpacyStyleHighlightsOld, extractDateHighlights } from "@tldr/core";
+import { computeSpacyStyleHighlights, computeSpacyStyleHighlightsOld, extractDateHighlights, splitIntoSentences } from "@tldr/core";
 import type {
   ApplyHighlightsAck,
   ApplyRsvpCursorRequest,
@@ -190,6 +190,43 @@ function findTokenIndexForOffset(tokens: RsvpToken[], offset: number): number {
   return tokens.length - 1;
 }
 
+function buildRsvpSentenceStartIndexes(tokens: RsvpToken[], text: string, baseOffset = 0): number[] {
+  if (!tokens.length) {
+    return [];
+  }
+
+  const starts = new Set<number>();
+  starts.add(0);
+
+  const sentences = splitIntoSentences(text);
+  if (!sentences.length) {
+    return [0];
+  }
+
+  let searchStart = 0;
+  for (const sentence of sentences) {
+    const normalizedSentence = sentence.trim();
+    if (!normalizedSentence) {
+      continue;
+    }
+
+    const index = text.indexOf(normalizedSentence, searchStart);
+    if (index === -1) {
+      continue;
+    }
+
+    const sentenceStart = baseOffset + index;
+    const tokenIndex = findTokenIndexForOffset(tokens, sentenceStart);
+    if (tokenIndex >= 0 && tokenIndex < tokens.length) {
+      starts.add(tokenIndex);
+    }
+
+    searchStart = index + normalizedSentence.length;
+  }
+
+  return Array.from(starts).sort((a, b) => a - b);
+}
+
 function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
@@ -204,6 +241,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [rsvpWpm, setRsvpWpm] = useState<number>(DEFAULT_RSVP_WPM);
   const [rsvpTokens, setRsvpTokens] = useState<RsvpToken[]>([]);
+  const [rsvpSentenceStarts, setRsvpSentenceStarts] = useState<number[]>([]);
   const [rsvpIndex, setRsvpIndex] = useState<number>(0);
   const [rsvpIsPlaying, setRsvpIsPlaying] = useState<boolean>(false);
   const [rsvpIsLoading, setRsvpIsLoading] = useState<boolean>(false);
@@ -510,6 +548,7 @@ function App() {
               const startIndex = findTokenIndexForOffset(pageTokens, selectionMatch.start);
               setRsvpCursorEnabled(true);
               setRsvpTokens(pageTokens);
+              setRsvpSentenceStarts(buildRsvpSentenceStartIndexes(pageTokens, fullText));
               setRsvpIndex(startIndex);
               setRsvpIsPlaying(true);
               setRsvpIsLoading(false);
@@ -527,6 +566,7 @@ function App() {
             setRsvpCursorEnabled(false);
             sendRsvpCursorClear(message.tabId);
             setRsvpTokens(selectionTokens);
+            setRsvpSentenceStarts(buildRsvpSentenceStartIndexes(selectionTokens, text));
             setRsvpIndex(0);
             setRsvpIsPlaying(true);
             setRsvpIsLoading(false);
@@ -787,11 +827,13 @@ function App() {
         const tokens = tokenizeRsvpText(text);
         if (!tokens.length) {
           setRsvpError("No readable text found on this page.");
+          setRsvpSentenceStarts([]);
           setRsvpIsLoading(false);
           sendRsvpCursorClear(activeId);
           return;
         }
         setRsvpTokens(tokens);
+        setRsvpSentenceStarts(buildRsvpSentenceStartIndexes(tokens, text));
         setRsvpIndex(0);
         setRsvpIsPlaying(true);
         setRsvpIsLoading(false);
@@ -810,6 +852,40 @@ function App() {
     }
     setRsvpIsPlaying((prev) => !prev);
   }, [rsvpTokens.length]);
+
+  const moveRsvpBySentence = useCallback(
+    (direction: -1 | 1) => {
+      if (!rsvpTokens.length) {
+        return;
+      }
+
+      const starts = rsvpSentenceStarts.length ? rsvpSentenceStarts : [0];
+      setRsvpIndex((prev) => {
+        const bounded = Math.max(0, Math.min(prev, rsvpTokens.length - 1));
+        let sentenceIndex = 0;
+        for (let i = 0; i < starts.length; i += 1) {
+          if (starts[i]! <= bounded) {
+            sentenceIndex = i;
+          } else {
+            break;
+          }
+        }
+
+        const targetSentenceIndex = Math.max(0, Math.min(starts.length - 1, sentenceIndex + direction));
+        const nextIndex = starts[targetSentenceIndex] ?? 0;
+        return Math.max(0, Math.min(nextIndex, rsvpTokens.length - 1));
+      });
+    },
+    [rsvpSentenceStarts, rsvpTokens.length],
+  );
+
+  const handleRsvpSentenceBack = useCallback(() => {
+    moveRsvpBySentence(-1);
+  }, [moveRsvpBySentence]);
+
+  const handleRsvpSentenceForward = useCallback(() => {
+    moveRsvpBySentence(1);
+  }, [moveRsvpBySentence]);
 
   const handleRsvpStop = useCallback(() => {
     setRsvpIsPlaying(false);
@@ -928,6 +1004,14 @@ function App() {
               </button>
               <button className="assist-ext-button" onClick={handleRsvpStop} disabled={!rsvpTokens.length}>
                 Reset
+              </button>
+            </div>
+            <div className="assist-ext-row">
+              <button className="assist-ext-button" onClick={handleRsvpSentenceBack} disabled={!rsvpTokens.length}>
+                Rewind sentence
+              </button>
+              <button className="assist-ext-button" onClick={handleRsvpSentenceForward} disabled={!rsvpTokens.length}>
+                Skip sentence
               </button>
             </div>
             <div className="assist-ext-field">
