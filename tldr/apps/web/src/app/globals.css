@@ -4,54 +4,50 @@
 
 :root {
   color-scheme: dark;
-  --background: 217 68% 8%;
-  --foreground: 210 39% 95%;
-  --card: 214 43% 21%;
-  --card-foreground: 210 39% 95%;
-  --popover: 214 43% 18%;
-  --popover-foreground: 210 39% 95%;
-  --primary: 198 88% 64%;
-  --primary-foreground: 217 68% 11%;
-  --secondary: 203 68% 73%;
-  --secondary-foreground: 217 68% 11%;
-  --muted: 214 38% 18%;
-  --muted-foreground: 209 30% 78%;
-  --accent: 213 43% 24%;
-  --accent-foreground: 210 39% 95%;
-  --destructive: 0 78% 64%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 208 42% 33%;
-  --input: 208 42% 33%;
-  --ring: 198 88% 64%;
+  --background: 217 49% 8%;
+  --foreground: 212 89% 96%;
+  --card: 213 36% 19%;
+  --card-foreground: 212 89% 96%;
+  --popover: 213 36% 19%;
+  --popover-foreground: 212 89% 96%;
+  --primary: 206 63% 49%;
+  --primary-foreground: 212 89% 96%;
+  --secondary: 209 37% 26%;
+  --secondary-foreground: 212 89% 96%;
+  --muted: 212 41% 15%;
+  --muted-foreground: 212 35% 78%;
+  --accent: 209 37% 26%;
+  --accent-foreground: 212 89% 96%;
+  --destructive: 354 43% 52%;
+  --destructive-foreground: 349 100% 94%;
+  --border: 210 27% 41%;
+  --input: 210 27% 41%;
+  --ring: 206 84% 66%;
   --radius: 1rem;
+  --font-sans: "Trebuchet MS", "Avenir Next", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font-display: "DIN Alternate", "Avenir Next Condensed", "Franklin Gothic Medium", "Trebuchet MS", sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: hsl(var(--background));
-  background-image:
-    radial-gradient(circle at 0% 0%, color-mix(in srgb, hsl(var(--primary)) 20%, transparent), transparent 40%),
-    radial-gradient(circle at 100% 0%, color-mix(in srgb, hsl(var(--secondary)) 12%, transparent), transparent 44%),
-    linear-gradient(180deg, hsl(216 63% 12%), hsl(var(--background)) 45%);
-  background-attachment: fixed;
+  background:
+    radial-gradient(1200px 700px at 18% -8%, hsl(206 63% 49% / 0.2), transparent 58%),
+    radial-gradient(900px 560px at 100% 0%, hsl(209 37% 26% / 0.35), transparent 60%),
+    hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: "Bahnschrift", "Trebuchet MS", "Gill Sans MT", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.5;
 }
 
-h1,
-h2,
-h3 {
-  font-family: "Franklin Gothic Medium", "Arial Narrow", "Trebuchet MS", sans-serif;
-  letter-spacing: 0.01em;
-}
-
 ::selection {
-  background: color-mix(in srgb, hsl(var(--primary)) 26%, transparent);
-}
-
-* {
-  box-sizing: border-box;
+  background: hsl(var(--primary) / 0.4);
+  color: hsl(var(--foreground));
 }

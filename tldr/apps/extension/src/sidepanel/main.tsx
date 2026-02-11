@@ -931,40 +931,38 @@ function App() {
 
   return (
     <div className="assist-ext-shell">
-      <header className="assist-ext-topbar">
-        <div className="assist-ext-brand">
-          <div className="assist-ext-brand-title">Clarity Companion</div>
-          <div className="assist-ext-brand-subtitle">Reading simplifier with opt-in AI</div>
-        </div>
-        <div className="assist-ext-segmented assist-ext-segmented--tabs" role="tablist" aria-label="Side panel pages">
-          <button
-            className={`assist-ext-segment ${activePage === "tldr" ? "assist-ext-segment--active" : ""}`}
-            onClick={() => setActivePage("tldr")}
-            role="tab"
-            aria-selected={activePage === "tldr"}
-          >
-            TLDR
-          </button>
-          <button
-            className={`assist-ext-segment ${activePage === "account" ? "assist-ext-segment--active" : ""}`}
-            onClick={() => setActivePage("account")}
-            role="tab"
-            aria-selected={activePage === "account"}
-          >
-            Account
-          </button>
-        </div>
-      </header>
+      <div className="assist-ext-segmented assist-ext-segmented--tabs" role="tablist" aria-label="Side panel pages">
+        <button
+          className={`assist-ext-segment assist-ext-segment--tab ${activePage === "tldr" ? "assist-ext-segment--active" : ""}`}
+          onClick={() => setActivePage("tldr")}
+          role="tab"
+          aria-selected={activePage === "tldr"}
+        >
+          TLDR
+        </button>
+        <button
+          className={`assist-ext-segment assist-ext-segment--tab ${activePage === "account" ? "assist-ext-segment--active" : ""}`}
+          onClick={() => setActivePage("account")}
+          role="tab"
+          aria-selected={activePage === "account"}
+        >
+          Account
+        </button>
+      </div>
 
       {activePage === "tldr" ? (
         <>
-          <section className="assist-ext-section">
+          <section className="assist-ext-section assist-ext-section--actions">
             <div className="assist-ext-section-title">Actions</div>
-            <div className="assist-ext-segmented" role="group" aria-label="Page actions">
-              <button className="assist-ext-segment" onClick={handleHighlightKeywords}>
+            <div className="assist-ext-segmented assist-ext-segmented--actions" role="group" aria-label="Page actions">
+              <button className="assist-ext-segment assist-ext-segment--action" onClick={handleHighlightKeywords}>
                 {highlightState.isLoading ? "Highlighting..." : "Highlight keywords"}
               </button>
-              <button className="assist-ext-segment" onClick={handleKeyInfo} disabled={!authState.isAuthenticated}>
+              <button
+                className="assist-ext-segment assist-ext-segment--action"
+                onClick={handleKeyInfo}
+                disabled={!authState.isAuthenticated}
+              >
                 {keyInfoState.isLoading ? "Extracting..." : "Extract key info"}
               </button>
               <button className="assist-ext-segment" onClick={handleReadPdf}>
@@ -999,7 +997,7 @@ function App() {
             )}
           </section>
 
-          <section className="assist-ext-section">
+          <section className="assist-ext-section assist-ext-section--rsvp">
             <div className="assist-ext-section-title">Rapid serial visual presentation</div>
             <div className="assist-ext-rsvp-display" aria-live="polite">
               <span className="assist-ext-rsvp-left">{rsvpDisplay.left}</span>
@@ -1008,7 +1006,7 @@ function App() {
               </span>
               <span className="assist-ext-rsvp-right">{rsvpDisplay.right}</span>
             </div>
-            <div className="assist-ext-row">
+            <div className="assist-ext-row assist-ext-row--cluster">
               <button className="assist-ext-button assist-ext-button--accent" onClick={handleRsvpStart} disabled={rsvpIsLoading}>
                 {rsvpIsLoading ? "Loading..." : "Start"}
               </button>
@@ -1019,7 +1017,7 @@ function App() {
                 Reset
               </button>
             </div>
-            <div className="assist-ext-row">
+            <div className="assist-ext-row assist-ext-row--cluster">
               <button className="assist-ext-button" onClick={handleRsvpSentenceBack} disabled={!rsvpTokens.length}>
                 Rewind sentence
               </button>
@@ -1047,7 +1045,7 @@ function App() {
             {rsvpError ? <div className="assist-ext-error">{rsvpError}</div> : null}
           </section>
 
-          <section className="assist-ext-section">
+          <section className="assist-ext-section assist-ext-section--key-info">
             <div className="assist-ext-section-title">Key information</div>
             {keyInfoState.isLoading ? (
               <div className="assist-ext-status">Extracting key info...</div>
@@ -1103,7 +1101,7 @@ function App() {
           </section>
         </>
       ) : (
-        <section className="assist-ext-section">
+        <section className="assist-ext-section assist-ext-section--account">
           <div className="assist-ext-section-title">Account</div>
           <div className="assist-ext-row">
             <span className="assist-ext-status">
@@ -1153,7 +1151,7 @@ function App() {
               <div className="assist-ext-field-label">Keyword highlight algorithm</div>
               <div className="assist-ext-field-value">{highlightAlgorithm === "new" ? "New" : "Old"}</div>
             </div>
-            <div className="assist-ext-segmented" role="group" aria-label="Keyword highlight algorithm">
+            <div className="assist-ext-segmented assist-ext-segmented--compact" role="group" aria-label="Keyword highlight algorithm">
               <button
                 className={`assist-ext-segment ${highlightAlgorithm === "old" ? "assist-ext-segment--active" : ""}`}
                 onClick={() => handleHighlightAlgorithmChange("old")}

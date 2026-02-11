@@ -522,11 +522,9 @@ export default function HomePage() {
                   )}
                 </Button>
               </div>
-              {wholeTextState.error ? (
-                <p className="text-sm font-medium text-destructive">{wholeTextState.error}</p>
-              ) : null}
+              {wholeTextState.error ? <p className="text-sm font-medium text-destructive">{wholeTextState.error}</p> : null}
               {wholeTextResult ? (
-                <div className="rounded-[var(--radius)] border border-border/80 bg-muted/50 p-4">
+                <div className="rounded-2xl border border-border bg-muted/55 p-4">
                   <p className="text-sm font-semibold text-foreground">Key information</p>
                   <div className="mt-3 space-y-2 text-sm text-foreground/90">
                     {keyInfoPayload
@@ -634,7 +632,7 @@ export default function HomePage() {
                             ) : null}
                           </div>
                           {simplifiedMap[index] ? (
-                            <div className="rounded-[var(--radius)] border border-border bg-muted/40 p-4">
+                            <div className="rounded-2xl border border-border bg-muted/55 p-4">
                               <p className="text-sm font-semibold text-foreground">Simplified copy</p>
                               {simplifiedMap[index]
                                 .split(/\n\s*\n+/)

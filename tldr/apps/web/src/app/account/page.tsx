@@ -100,7 +100,7 @@ export default function AccountPage() {
 
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen flex-col bg-background">
+      <div className="flex min-h-screen flex-col">
         <SiteHeader />
         <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -114,7 +114,7 @@ export default function AccountPage() {
 
   if (!session?.user) {
     return (
-      <div className="flex min-h-screen flex-col bg-background">
+      <div className="flex min-h-screen flex-col">
         <SiteHeader />
         <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
           <Alert>
@@ -129,12 +129,12 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h1 className="text-2xl font-semibold text-foreground">Your account</h1>
+            <h1 className="font-display text-2xl font-bold uppercase tracking-[0.03em] text-foreground">Your account</h1>
             <Button variant="outline" onClick={handlePortal} disabled={portalLoading}>
               {portalLoading ? "Opening portal..." : "Manage subscription"}
             </Button>

@@ -40,7 +40,7 @@ export default function PricingPage() {
     if (response.ok) {
       const data = await response.json();
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
       }
     }
   }
@@ -57,7 +57,7 @@ export default function PricingPage() {
     if (response.ok) {
       const data = await response.json();
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
       }
     }
   }
@@ -70,7 +70,7 @@ export default function PricingPage() {
           <Badge variant="secondary" className="text-sm">
             14-day trial included
           </Badge>
-          <h1 className="text-3xl font-semibold text-foreground">
+          <h1 className="font-display text-3xl font-bold uppercase tracking-[0.03em] text-foreground">
             Pricing that keeps reading simple.
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -90,9 +90,9 @@ export default function PricingPage() {
                   <CardTitle>{tier.name}</CardTitle>
                   {tier.tier !== "free" ? <Badge>Popular</Badge> : null}
                 </div>
-                <div className="text-3xl font-semibold text-foreground">
+                <div className="font-display text-3xl font-bold uppercase tracking-[0.03em] text-foreground">
                   {tier.price}
-                  <span className="text-sm font-normal text-muted-foreground">/month</span>
+                  <span className="ml-1 font-sans text-sm font-normal normal-case text-muted-foreground">/month</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{tier.description}</p>
               </CardHeader>
