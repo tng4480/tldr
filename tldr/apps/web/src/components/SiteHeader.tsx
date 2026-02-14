@@ -26,6 +26,9 @@ export default function SiteHeader() {
             <Link href="/pricing">Pricing</Link>
           </Button>
           <Button asChild variant="ghost">
+            <Link href="/read-pdf">Read PDF</Link>
+          </Button>
+          <Button asChild variant="ghost">
             <Link href="/account">Account</Link>
           </Button>
           {session?.user ? (

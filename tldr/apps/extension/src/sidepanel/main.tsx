@@ -670,6 +670,10 @@ function App() {
     chrome.tabs.create({ url: `${apiBase}/api/auth/signin` }, () => runtimeLastError("sp", "chrome.tabs.create sign-in"));
   }, [apiBase]);
 
+  const handleReadPdf = useCallback(() => {
+    chrome.tabs.create({ url: `${apiBase}/read-pdf` }, () => runtimeLastError("sp", "chrome.tabs.create read-pdf"));
+  }, [apiBase]);
+
   const handleConnect = useCallback(() => {
     setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
     chrome.runtime.sendMessage(
@@ -956,6 +960,9 @@ function App() {
               </button>
               <button className="assist-ext-segment" onClick={handleKeyInfo} disabled={!authState.isAuthenticated}>
                 {keyInfoState.isLoading ? "Extracting..." : "Extract key info"}
+              </button>
+              <button className="assist-ext-segment" onClick={handleReadPdf}>
+                Read PDF
               </button>
             </div>
             {error ? <div className="assist-ext-error">{error}</div> : null}
