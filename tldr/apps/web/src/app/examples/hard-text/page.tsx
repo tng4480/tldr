@@ -14,7 +14,7 @@ If, at any time, the Recipient is unable to comply due to unforeseen circumstanc
 
 export default function HardTextExamplePage() {
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background via-background to-muted/40">
+    <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-6xl px-4 pb-20 pt-10 sm:px-6">
         <div className="space-y-10">
@@ -36,7 +36,7 @@ export default function HardTextExamplePage() {
                 </Button>
               </div>
               <Separator />
-              <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+              <div className="rounded-[var(--radius)] border border-border bg-muted/40 p-4">
                 <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
                   {HARD_TEXT}
                 </pre>

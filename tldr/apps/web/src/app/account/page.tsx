@@ -104,8 +104,8 @@ export default function AccountPage() {
         <SiteHeader />
         <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-border/60 border-t-transparent" />
-            Loading session…
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-transparent" />
+            Loading session...
           </div>
         </main>
       </div>
@@ -136,7 +136,7 @@ export default function AccountPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <h1 className="text-2xl font-semibold text-foreground">Your account</h1>
             <Button variant="outline" onClick={handlePortal} disabled={portalLoading}>
-              {portalLoading ? "Opening portal…" : "Manage subscription"}
+              {portalLoading ? "Opening portal..." : "Manage subscription"}
             </Button>
           </div>
           {error ? (
@@ -147,8 +147,8 @@ export default function AccountPage() {
           ) : null}
           {loading ? (
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-border/60 border-t-transparent" />
-              Loading account details…
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-transparent" />
+              Loading account details...
             </div>
           ) : profile ? (
             <div className="space-y-6">

@@ -253,8 +253,8 @@ export default function HomePage() {
               key={`${sentenceStart}-${index}-${span.kind}`}
               className={
                 span.kind === "date"
-                  ? "rounded-md bg-secondary/15 px-1 text-secondary ring-1 ring-secondary/25 dark:text-secondary-foreground"
-                  : "rounded-md bg-muted/70 px-1 text-foreground ring-1 ring-border/60"
+                  ? "rounded-md bg-secondary/15 px-1 text-secondary ring-1 ring-secondary/30"
+                  : "rounded-md bg-muted/80 px-1 text-foreground ring-1 ring-border/80"
               }
             >
               {spanText}
@@ -345,7 +345,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background via-background to-muted/40">
+    <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-6xl px-4 pb-20 pt-10 sm:px-6">
         <div className="space-y-10">
@@ -463,7 +463,7 @@ export default function HomePage() {
                       return (
                         <span key={`${sentenceRange.start}-${sentenceRange.end}`}>
                           {hardSentences[index] ? (
-                            <mark className="rounded-md bg-primary/20 px-1 text-foreground ring-1 ring-primary/25">
+                            <mark className="rounded-md bg-primary/16 px-1 text-foreground ring-1 ring-primary/35">
                               {content}
                             </mark>
                           ) : (
@@ -521,10 +521,10 @@ export default function HomePage() {
                 </Button>
               </div>
               {wholeTextState.error ? (
-                <p className="text-sm font-medium text-red-600">{wholeTextState.error}</p>
+                <p className="text-sm font-medium text-destructive">{wholeTextState.error}</p>
               ) : null}
               {wholeTextResult ? (
-                <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                <div className="rounded-[var(--radius)] border border-border bg-muted/40 p-4">
                   <p className="text-sm font-semibold text-foreground">Key information</p>
                   <div className="mt-3 space-y-2 text-sm text-foreground/90">
                     {keyInfoPayload
@@ -562,7 +562,7 @@ export default function HomePage() {
                         })}
                   </div>
                   {keyInfoPayload?.events?.length ? (
-                    <div className="mt-4 border-t border-border/60 pt-3">
+                    <div className="mt-4 border-t border-border pt-3">
                       <p className="text-sm font-semibold text-foreground">Add to Google Calendar</p>
                       <ul className="mt-2 space-y-1 pl-4 text-sm">
                         {keyInfoPayload.events.map((event, index) => {
@@ -578,7 +578,7 @@ export default function HomePage() {
                             });
                           return (
                             <li key={`${event.title}-${index}`}>
-                              <a className="text-secondary underline-offset-4 hover:underline" href={calendarUrl} target="_blank" rel="noreferrer">
+                              <a className="text-primary underline-offset-4 hover:underline" href={calendarUrl} target="_blank" rel="noreferrer">
                                 {event.title}
                               </a>
                             </li>
@@ -605,14 +605,14 @@ export default function HomePage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {simplifyState.error ? (
-                <p className="text-sm font-medium text-red-600">{simplifyState.error}</p>
+                <p className="text-sm font-medium text-destructive">{simplifyState.error}</p>
               ) : null}
               {paragraphs.length ? (
                 <div className="space-y-4">
                   {paragraphs.map((paragraph, index) => {
                     const isLoading = simplifyState.loadingIndex === index;
                     return (
-                      <Card key={`${index}-${paragraph.slice(0, 12)}`} className="border border-border/60">
+                      <Card key={`${index}-${paragraph.slice(0, 12)}`} className="border border-border">
                         <CardContent className="space-y-3 pt-6">
                           <p className="text-sm font-semibold text-foreground">Paragraph {index + 1}</p>
                           <p className="text-sm text-foreground/90">{paragraph}</p>
@@ -632,7 +632,7 @@ export default function HomePage() {
                             ) : null}
                           </div>
                           {simplifiedMap[index] ? (
-                            <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                            <div className="rounded-[var(--radius)] border border-border bg-muted/40 p-4">
                               <p className="text-sm font-semibold text-foreground">Simplified copy</p>
                               {simplifiedMap[index]
                                 .split(/\n\s*\n+/)
