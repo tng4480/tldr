@@ -36,35 +36,12 @@ export function mapSpansToHighlightRects(pages: PdfPageData[], spans: HighlightS
         }
       });
 
-      covered.sort((a, b) => a[0] - b[0]);
-      const merged: Array<[number, number]> = [];
-      covered.forEach((range) => {
-        const last = merged[merged.length - 1];
-        if (!last || range[0] > last[1]) {
-          merged.push([...range] as [number, number]);
-          return;
-        }
-        last[1] = Math.max(last[1], range[1]);
-      });
-
-      const nonKeywordRanges: Array<[number, number]> = [];
-      let cursor = 0;
-      merged.forEach(([start, end]) => {
-        if (start > cursor) {
-          nonKeywordRanges.push([cursor, start]);
-        }
-        cursor = Math.max(cursor, end);
-      });
-      if (cursor < itemLength) {
-        nonKeywordRanges.push([cursor, itemLength]);
-      }
-
       const widthRatio = itemLength > 0 ? item.viewportWidth / itemLength : 0;
       const rawWidthRatio = itemLength > 0 ? item.rawWidth / itemLength : 0;
       const viewportHeight = Math.max(6, item.viewportHeight || item.viewportFontSize * 1.05);
       const rawHeight = Math.max(5, item.rawFontSize * 0.9);
 
-      nonKeywordRanges.forEach(([localStart, localEnd]) => {
+      covered.forEach(([localStart, localEnd]) => {
         if (localEnd <= localStart) {
           return;
         }

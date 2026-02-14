@@ -1,5 +1,6 @@
 import type { ParsedPdfDocument, PdfPageData, PdfTextItem, PdfProcessingWarning } from "./types";
 import { loadPdfJsRuntime } from "./runtime";
+import type { RenderMode } from "@/lib/file/baseTypes";
 
 const DEFAULT_SCALE = 1.35;
 
@@ -127,9 +128,72 @@ export async function parsePdfFile(file: File, scale = DEFAULT_SCALE): Promise<P
   const warnings = buildWarningSet(fullText, pages);
   return {
     fileName: file.name,
+    fileType: "pdf",
+    mode: "preserve_layout",
     bytes,
     fullText,
     pages,
+    warnings,
+  };
+}
+
+export async function parsePdfTextOnly(file: File): Promise<ParsedPdfDocument> {
+  const pdfjs = await getPdfJs();
+  const buffer = await file.arrayBuffer();
+  const bytes = toUint8Array(buffer);
+  const loadingTask = pdfjs.getDocument({ data: bytes });
+  const pdf = await loadingTask.promise;
+
+  let fullText = "";
+  const pages: PdfPageData[] = [];
+  let textItemCount = 0;
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1 });
+    const textContent = await page.getTextContent();
+    const textItems = textContent.items as Array<{ str?: string; hasEOL?: boolean }>;
+
+    textItems.forEach((item) => {
+      const text = (item.str ?? "").replace(/\u0000/g, "");
+      if (!text) {
+        return;
+      }
+      textItemCount += 1;
+      fullText += text;
+      fullText += item.hasEOL ? "\n" : " ";
+    });
+
+    pages.push({
+      pageIndex: pageNumber - 1,
+      width: viewport.width,
+      height: viewport.height,
+      imageDataUrl: "",
+      items: [],
+    });
+  }
+
+  await pdf.destroy();
+  const warnings: PdfProcessingWarning[] = [];
+  if (!fullText.trim()) {
+    warnings.push({
+      code: "NO_TEXT_LAYER",
+      message: "No selectable text was detected in this PDF. This is often a scanned file.",
+    });
+  } else if (textItemCount < 100) {
+    warnings.push({
+      code: "LOW_TEXT_DENSITY",
+      message: "Limited selectable text was detected. Highlights may be incomplete.",
+    });
+  }
+
+  return {
+    fileName: file.name,
+    fileType: "pdf",
+    mode: "extract_text" as RenderMode,
+    bytes,
+    fullText,
+    pages: [],
     warnings,
   };
 }

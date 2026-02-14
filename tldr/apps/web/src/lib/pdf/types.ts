@@ -1,6 +1,7 @@
-export type PdfProcessingWarning = {
+import type { ParsedDocumentBase } from "@/lib/file/baseTypes";
+
+export type PdfProcessingWarning = ParsedDocumentBase["warnings"][number] & {
   code: "NO_TEXT_LAYER" | "LOW_TEXT_DENSITY" | "OCR_NOT_CONFIGURED";
-  message: string;
 };
 
 export type PdfTextItem = {
@@ -29,12 +30,9 @@ export type PdfPageData = {
   items: PdfTextItem[];
 };
 
-export type ParsedPdfDocument = {
-  fileName: string;
-  bytes: Uint8Array;
-  fullText: string;
+export type ParsedPdfDocument = ParsedDocumentBase & {
+  fileType: "pdf";
   pages: PdfPageData[];
-  warnings: PdfProcessingWarning[];
 };
 
 export type HighlightRect = {
