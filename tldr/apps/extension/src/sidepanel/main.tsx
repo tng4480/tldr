@@ -952,17 +952,13 @@ function App() {
 
       {activePage === "tldr" ? (
         <>
-          <section className="assist-ext-section assist-ext-section--actions">
+          <section className="assist-ext-section">
             <div className="assist-ext-section-title">Actions</div>
-            <div className="assist-ext-segmented assist-ext-segmented--actions" role="group" aria-label="Page actions">
-              <button className="assist-ext-segment assist-ext-segment--action" onClick={handleHighlightKeywords}>
+            <div className="assist-ext-segmented" role="group" aria-label="Page actions">
+              <button className="assist-ext-segment" onClick={handleHighlightKeywords}>
                 {highlightState.isLoading ? "Highlighting..." : "Highlight keywords"}
               </button>
-              <button
-                className="assist-ext-segment assist-ext-segment--action"
-                onClick={handleKeyInfo}
-                disabled={!authState.isAuthenticated}
-              >
+              <button className="assist-ext-segment" onClick={handleKeyInfo} disabled={!authState.isAuthenticated}>
                 {keyInfoState.isLoading ? "Extracting..." : "Extract key info"}
               </button>
               <button className="assist-ext-segment" onClick={handleReadPdf}>
@@ -997,7 +993,7 @@ function App() {
             )}
           </section>
 
-          <section className="assist-ext-section assist-ext-section--rsvp">
+          <section className="assist-ext-section">
             <div className="assist-ext-section-title">Rapid serial visual presentation</div>
             <div className="assist-ext-rsvp-display" aria-live="polite">
               <span className="assist-ext-rsvp-left">{rsvpDisplay.left}</span>
@@ -1006,7 +1002,7 @@ function App() {
               </span>
               <span className="assist-ext-rsvp-right">{rsvpDisplay.right}</span>
             </div>
-            <div className="assist-ext-row assist-ext-row--cluster">
+            <div className="assist-ext-row">
               <button className="assist-ext-button assist-ext-button--accent" onClick={handleRsvpStart} disabled={rsvpIsLoading}>
                 {rsvpIsLoading ? "Loading..." : "Start"}
               </button>
@@ -1017,7 +1013,7 @@ function App() {
                 Reset
               </button>
             </div>
-            <div className="assist-ext-row assist-ext-row--cluster">
+            <div className="assist-ext-row">
               <button className="assist-ext-button" onClick={handleRsvpSentenceBack} disabled={!rsvpTokens.length}>
                 Rewind sentence
               </button>
@@ -1045,7 +1041,7 @@ function App() {
             {rsvpError ? <div className="assist-ext-error">{rsvpError}</div> : null}
           </section>
 
-          <section className="assist-ext-section assist-ext-section--key-info">
+          <section className="assist-ext-section">
             <div className="assist-ext-section-title">Key information</div>
             {keyInfoState.isLoading ? (
               <div className="assist-ext-status">Extracting key info...</div>
@@ -1101,7 +1097,7 @@ function App() {
           </section>
         </>
       ) : (
-        <section className="assist-ext-section assist-ext-section--account">
+        <section className="assist-ext-section">
           <div className="assist-ext-section-title">Account</div>
           <div className="assist-ext-row">
             <span className="assist-ext-status">
@@ -1151,7 +1147,7 @@ function App() {
               <div className="assist-ext-field-label">Keyword highlight algorithm</div>
               <div className="assist-ext-field-value">{highlightAlgorithm === "new" ? "New" : "Old"}</div>
             </div>
-            <div className="assist-ext-segmented assist-ext-segmented--compact" role="group" aria-label="Keyword highlight algorithm">
+            <div className="assist-ext-segmented" role="group" aria-label="Keyword highlight algorithm">
               <button
                 className={`assist-ext-segment ${highlightAlgorithm === "old" ? "assist-ext-segment--active" : ""}`}
                 onClick={() => handleHighlightAlgorithmChange("old")}

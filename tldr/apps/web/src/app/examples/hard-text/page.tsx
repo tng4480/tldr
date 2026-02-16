@@ -36,7 +36,7 @@ export default function HardTextExamplePage() {
                 </Button>
               </div>
               <Separator />
-              <div className="rounded-2xl border border-border bg-muted/55 p-4">
+              <div className="rounded-[var(--radius)] border border-border bg-muted/40 p-4">
                 <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
                   {HARD_TEXT}
                 </pre>
