@@ -962,7 +962,7 @@ function App() {
                 {keyInfoState.isLoading ? "Extracting..." : "Extract key info"}
               </button>
               <button className="assist-ext-segment" onClick={handleReadPdf}>
-                Read PDF
+                Read Files
               </button>
             </div>
             {error ? <div className="assist-ext-error">{error}</div> : null}

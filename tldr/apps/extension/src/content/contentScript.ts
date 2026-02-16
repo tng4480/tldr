@@ -31,7 +31,6 @@ const EMBOLDEN_ATTR = "data-tldr-embolden";
 const EMBOLDEN_CLASS = "tldr-embolden";
 const RSVP_CURSOR_ATTR = "data-tldr-rsvp-cursor";
 const RSVP_CURSOR_CLASS = "tldr-rsvp-cursor";
-const RSVP_CARET_ID = "tldr-rsvp-caret";
 const DEEMPHASIZE_CLASS = "tldr-deemphasize";
 const DEEMPHASIZE_COLOR_VAR = "--tldr-deemphasis-color";
 const BASE_COLOR_VAR = "--tldr-base-color";
@@ -57,8 +56,6 @@ let bubbleExpanded = false;
 let highlightContrast = DEFAULT_HIGHLIGHT_CONTRAST;
 let storageInitialized = false;
 let rsvpCursorRange: Range | null = null;
-let rsvpCaret: HTMLDivElement | null = null;
-let rsvpCaretListenersAttached = false;
 
 function signalContentReady() {
   // This must run only after `chrome.runtime.onMessage.addListener(...)` is registered,
@@ -125,27 +122,6 @@ function ensureHighlightStyles() {
       border-radius: 3px;
     }
 
-    .${RSVP_CURSOR_CLASS}[${RSVP_CURSOR_ATTR}]::before {
-      content: "|";
-      position: absolute;
-      left: -0.35em;
-      top: 50%;
-      transform: translateY(-50%);
-      color: rgba(249, 116, 75, 0.95);
-      font-weight: 700;
-    }
-
-    #${RSVP_CARET_ID} {
-      position: fixed;
-      width: 2px;
-      background: rgba(249, 116, 75, 0.95);
-      border-radius: 2px;
-      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
-      z-index: 2147483647;
-      pointer-events: none;
-      display: none;
-    }
-
     .${DEEMPHASIZE_CLASS},
     .${DEEMPHASIZE_CLASS} * {
     color: var(${DEEMPHASIZE_COLOR_VAR});
@@ -155,65 +131,12 @@ function ensureHighlightStyles() {
   styleInjected = true;
 }
 
-function ensureRsvpCaret() {
-  if (rsvpCaret && rsvpCaret.isConnected) {
-    return;
-  }
-  const caret = document.createElement("div");
-  caret.id = RSVP_CARET_ID;
-  (document.body ?? document.documentElement).appendChild(caret);
-  rsvpCaret = caret;
-}
-
-function updateRsvpCaretPosition() {
-  if (!rsvpCursorRange || !rsvpCaret) {
-    return;
-  }
-
-  const caretRange = rsvpCursorRange.cloneRange();
-  caretRange.collapse(true);
-  const caretRect = caretRange.getBoundingClientRect();
-  const rangeRect = rsvpCursorRange.getBoundingClientRect();
-  const rect = caretRect.height > 0 ? caretRect : rangeRect;
-  if (!rect || rect.height <= 0) {
-    rsvpCaret.style.display = "none";
-    return;
-  }
-
-  rsvpCaret.style.display = "block";
-  rsvpCaret.style.left = `${Math.round(rect.left - 1)}px`;
-  rsvpCaret.style.top = `${Math.round(rect.top)}px`;
-  rsvpCaret.style.height = `${Math.max(10, Math.round(rect.height))}px`;
-}
-
-function attachRsvpCaretListeners() {
-  if (rsvpCaretListenersAttached) {
-    return;
-  }
-  rsvpCaretListenersAttached = true;
-  window.addEventListener("scroll", updateRsvpCaretPosition, { passive: true });
-  window.addEventListener("resize", updateRsvpCaretPosition, { passive: true });
-}
-
-function detachRsvpCaretListeners() {
-  if (!rsvpCaretListenersAttached) {
-    return;
-  }
-  rsvpCaretListenersAttached = false;
-  window.removeEventListener("scroll", updateRsvpCaretPosition);
-  window.removeEventListener("resize", updateRsvpCaretPosition);
-}
-
 function clearRsvpCursor() {
   rsvpCursorRange = null;
   if ("highlights" in CSS) {
     CSS.highlights.delete(HIGHLIGHT_NAME_RSVP_CURSOR);
   }
   document.querySelectorAll(`span[${RSVP_CURSOR_ATTR}]`).forEach((node) => node.replaceWith(...node.childNodes));
-  if (rsvpCaret) {
-    rsvpCaret.style.display = "none";
-  }
-  detachRsvpCaretListeners();
 }
 
 function applyRsvpCursor(start: number, end: number, scrollIntoView: boolean, expectedWord?: string) {
@@ -259,9 +182,6 @@ function applyRsvpCursor(start: number, end: number, scrollIntoView: boolean, ex
   }
 
   rsvpCursorRange = range;
-  ensureRsvpCaret();
-  attachRsvpCaretListeners();
-  updateRsvpCaretPosition();
 }
 
 function ensureFloatingBubble() {

@@ -1,6 +1,7 @@
 "use client";
 
 import { type ChangeEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { splitIntoSentences } from "@tldr/core";
 import SiteHeader from "@/components/SiteHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,49 @@ function splitWordForRsvp(word: string) {
   };
 }
 
+function findTokenIndexForOffset(tokens: RsvpToken[], offset: number): number {
+  if (!tokens.length) {
+    return 0;
+  }
+  const index = tokens.findIndex((token) => offset >= token.start && offset < token.end);
+  if (index >= 0) {
+    return index;
+  }
+  const nextIndex = tokens.findIndex((token) => token.start >= offset);
+  if (nextIndex >= 0) {
+    return nextIndex;
+  }
+  return tokens.length - 1;
+}
+
+function buildRsvpSentenceStartIndexes(tokens: RsvpToken[], text: string): number[] {
+  if (!tokens.length) {
+    return [];
+  }
+  const starts = new Set<number>();
+  starts.add(0);
+  const sentences = splitIntoSentences(text);
+  if (!sentences.length) {
+    return [0];
+  }
+
+  let searchStart = 0;
+  for (const sentence of sentences) {
+    const normalizedSentence = sentence.trim();
+    if (!normalizedSentence) {
+      continue;
+    }
+    const index = text.indexOf(normalizedSentence, searchStart);
+    if (index === -1) {
+      continue;
+    }
+    starts.add(findTokenIndexForOffset(tokens, index));
+    searchStart = index + normalizedSentence.length;
+  }
+
+  return Array.from(starts).sort((a, b) => a - b);
+}
+
 function saveBytesAsFile(bytes: Uint8Array, fileName: string, mimeType: string) {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
@@ -103,8 +147,10 @@ export default function ReadPdfPage() {
   }, [mode, parsedDocument, spans]);
 
   const tokens = useMemo(() => tokenize(fullText), [fullText]);
+  const rsvpSentenceStarts = useMemo(() => buildRsvpSentenceStartIndexes(tokens, fullText), [fullText, tokens]);
   const currentToken = tokens[Math.min(rsvpIndex, Math.max(0, tokens.length - 1))];
   const rsvpWord = splitWordForRsvp(currentToken?.word ?? "");
+  const activeRange = currentToken ? { start: currentToken.start, end: currentToken.end } : null;
 
   const extractViewText = useMemo(() => {
     if (!parsedDocument) {
@@ -249,8 +295,49 @@ export default function ReadPdfPage() {
     if (!extractViewText) {
       return "No extractable text.";
     }
-    return renderTextWithHighlights(extractViewText, spans, "bold");
-  }, [extractViewText, spans]);
+    return renderTextWithHighlights(extractViewText, spans, "bold", { activeRange });
+  }, [activeRange, extractViewText, spans]);
+
+  const rsvpCursorRects = useMemo(() => {
+    if (!parsedDocument || parsedDocument.fileType !== "pdf" || mode !== "preserve_layout" || !activeRange) {
+      return [];
+    }
+    return mapSpansToHighlightRects(parsedDocument.pages, [
+      { text: currentToken?.word ?? "", start: activeRange.start, end: activeRange.end },
+    ]);
+  }, [activeRange, currentToken?.word, mode, parsedDocument]);
+
+  const moveRsvpBySentence = useCallback(
+    (direction: -1 | 1) => {
+      if (!tokens.length) {
+        return;
+      }
+      const starts = rsvpSentenceStarts.length ? rsvpSentenceStarts : [0];
+      setRsvpIndex((prev) => {
+        const bounded = Math.max(0, Math.min(prev, tokens.length - 1));
+        let sentenceIndex = 0;
+        for (let i = 0; i < starts.length; i += 1) {
+          if (starts[i]! <= bounded) {
+            sentenceIndex = i;
+          } else {
+            break;
+          }
+        }
+        const targetSentenceIndex = Math.max(0, Math.min(starts.length - 1, sentenceIndex + direction));
+        const nextIndex = starts[targetSentenceIndex] ?? 0;
+        return Math.max(0, Math.min(nextIndex, tokens.length - 1));
+      });
+    },
+    [rsvpSentenceStarts, tokens.length],
+  );
+
+  const handleRsvpSentenceBack = useCallback(() => {
+    moveRsvpBySentence(-1);
+  }, [moveRsvpBySentence]);
+
+  const handleRsvpSentenceForward = useCallback(() => {
+    moveRsvpBySentence(1);
+  }, [moveRsvpBySentence]);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -350,6 +437,14 @@ export default function ReadPdfPage() {
                     Reset
                   </Button>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={handleRsvpSentenceBack} disabled={!tokens.length}>
+                    Rewind sentence
+                  </Button>
+                  <Button variant="outline" onClick={handleRsvpSentenceForward} disabled={!tokens.length}>
+                    Skip sentence
+                  </Button>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="rsvp-wpm">Words per minute: {wpm}</Label>
                   <input
@@ -435,7 +530,7 @@ export default function ReadPdfPage() {
               {parsedDocument && mode === "preserve_layout" && parsedDocument.fileType === "txt" ? (
                 <div className="rounded-md border border-border bg-card p-4">
                   <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                    {renderTextWithHighlights(preserveTxtText, spans, "bold")}
+                    {renderTextWithHighlights(preserveTxtText, spans, "bold", { activeRange })}
                   </p>
                 </div>
               ) : null}
@@ -474,6 +569,18 @@ export default function ReadPdfPage() {
                                     height: `${rect.viewportHeight}px`,
                                     backgroundColor: `rgba(252, 211, 77, ${Math.max(0.1, Math.min(0.9, highlightOpacityPct / 100))})`,
                                     border: `1px solid rgba(245, 158, 11, ${Math.max(0.08, Math.min(0.6, (highlightOpacityPct / 100) * 0.55))})`,
+                                  }}
+                                />
+                              ))}
+                              {rsvpCursorRects.map((rect, index) => (
+                                <div
+                                  key={`cursor-${page.pageIndex}-${index}`}
+                                  className="absolute rounded-[2px] bg-orange-300/45 ring-1 ring-orange-500/45"
+                                  style={{
+                                    left: `${rect.viewportX}px`,
+                                    top: `${rect.viewportTop + Math.max(2, rect.viewportHeight * (highlightOffsetPct / 100))}px`,
+                                    width: `${rect.viewportWidth}px`,
+                                    height: `${rect.viewportHeight}px`,
                                   }}
                                 />
                               ))}
