@@ -1,5 +1,5 @@
 import type { HighlightSpan } from "@tldr/core";
-import { computeSpacyStyleHighlights, extractDateHighlights } from "@tldr/core";
+import { extractDateHighlights, extractKeywordHighlightSpans } from "@tldr/core";
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -11,7 +11,7 @@ export function buildHighlightSpans(text: string): HighlightSpan[] {
     return [];
   }
 
-  const keywordSpans = computeSpacyStyleHighlights(normalized);
+  const keywordSpans = extractKeywordHighlightSpans(normalized);
   const dateTerms = extractDateHighlights(normalized, 48);
   const dateSpans: HighlightSpan[] = [];
 

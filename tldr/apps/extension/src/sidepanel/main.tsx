@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { HighlightSpan } from "@tldr/core";
-import { computeSpacyStyleHighlights, computeSpacyStyleHighlightsOld, extractDateHighlights, splitIntoSentences } from "@tldr/core";
+import {
+  extractDateHighlights,
+  extractKeywordHighlightSpans,
+  extractLegacyKeywordHighlightSpans,
+  splitIntoSentences,
+} from "@tldr/core";
 import type {
   ApplyHighlightsAck,
   ApplyRsvpCursorRequest,
@@ -27,14 +32,14 @@ import {
 } from "../shared/settings";
 import "./sidepanel.css";
 
-function buildHighlights(text: string, algorithm: HighlightAlgorithm): HighlightSpan[] {
+function buildKeywordAndDateHighlightSpans(text: string, algorithm: HighlightAlgorithm): HighlightSpan[] {
   const trimmed = text.trim();
   if (!trimmed) {
     return [];
   }
 
   const highlightSpans =
-    algorithm === "old" ? computeSpacyStyleHighlightsOld(trimmed) : computeSpacyStyleHighlights(trimmed);
+    algorithm === "old" ? extractLegacyKeywordHighlightSpans(trimmed) : extractKeywordHighlightSpans(trimmed);
   const dateTerms = extractDateHighlights(trimmed, 24);
 
   const dateSpans: HighlightSpan[] = [];
@@ -737,7 +742,7 @@ function App() {
           return;
         }
 
-        const highlights = buildHighlights(extract.text ?? "", highlightAlgorithm);
+        const highlights = buildKeywordAndDateHighlightSpans(extract.text ?? "", highlightAlgorithm);
         const filteredHighlights =
           highlightAlgorithm === "new"
             ? highlights.filter((span) => (span.importance ?? DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD) >= highlightImportanceThreshold)

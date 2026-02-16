@@ -6,7 +6,7 @@ import {
   type TextNodeInfo,
 } from "@tldr/core-dom";
 import type { HighlightSpan } from "@tldr/core";
-import { computeSpacyStyleHighlights, splitIntoSentences, wordCount } from "@tldr/core";
+import { extractKeywordHighlightSpans, splitIntoSentences, wordCount } from "@tldr/core";
 import { clampHighlightContrast, DEFAULT_HIGHLIGHT_CONTRAST, HIGHLIGHT_CONTRAST_KEY } from "../shared/settings";
 import type {
   ApplyHighlightsRequest,
@@ -346,7 +346,7 @@ function ensureFloatingBubble() {
       if (!currentReadableText.trim()) {
         refreshNodes();
       }
-      const spans = computeSpacyStyleHighlights(currentReadableText);
+      const spans = extractKeywordHighlightSpans(currentReadableText);
       applyHighlights(spans, "keywords");
     } catch (error) {
       warn("cs", "Bubble highlight failed", error);

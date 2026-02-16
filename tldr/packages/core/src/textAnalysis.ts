@@ -250,12 +250,12 @@ export function detectHardSentences(sentences: string[]): boolean[] {
   });
 }
 
-export function computeTfIdfHighlights(text: string, topWords = 12): string[] {
+export function extractTopHighlightTerms(text: string, topWords = 12): string[] {
   /**
-   * @deprecated Use computeSpacyStyleHighlights instead. This adapter now returns
-   * phrases derived from spaCy-style highlighting without TF-IDF scoring.
+   * @deprecated Use extractKeywordHighlightSpans instead. This adapter now
+   * returns phrases derived from keyword highlighting without TF-IDF scoring.
    */
-  const spans = computeSpacyStyleHighlights(text);
+  const spans = extractKeywordHighlightSpans(text);
   if (!spans.length) {
     return [];
   }
@@ -664,7 +664,7 @@ function dedupeOverlappingSpans(candidates: HighlightCandidate[]): HighlightCand
  * Note: wink-nlp lacks dependency parsing, so we approximate noun chunks with
  * (ADJ)* + (NOUN|PROPN)+ patterns confined to sentence boundaries.
  */
-function computeSpacyStyleHighlightsInternal(text: string, includeImportance: boolean): HighlightSpan[] {
+function extractKeywordHighlightSpansInternal(text: string, includeImportance: boolean): HighlightSpan[] {
   const trimmed = text.trim();
   if (!trimmed) {
     return [];
@@ -906,12 +906,12 @@ function computeSpacyStyleHighlightsInternal(text: string, includeImportance: bo
     );
 }
 
-export function computeSpacyStyleHighlightsOld(text: string): HighlightSpan[] {
-  return computeSpacyStyleHighlightsInternal(text, false);
+export function extractLegacyKeywordHighlightSpans(text: string): HighlightSpan[] {
+  return extractKeywordHighlightSpansInternal(text, false);
 }
 
-export function computeSpacyStyleHighlights(text: string): HighlightSpan[] {
-  return computeSpacyStyleHighlightsInternal(text, true);
+export function extractKeywordHighlightSpans(text: string): HighlightSpan[] {
+  return extractKeywordHighlightSpansInternal(text, true);
 }
 
 export function extractDateHighlights(text: string, maxMatches = 12): string[] {

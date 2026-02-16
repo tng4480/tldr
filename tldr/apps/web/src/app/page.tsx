@@ -12,8 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { buildGoogleCalendarTemplateUrl } from "@/lib/googleCalendar";
 import type { SimplifyTone, WholeTextMode } from "@/lib/llm";
 import {
-  computeSpacyStyleHighlights,
   detectHardSentences,
+  extractKeywordHighlightSpans,
   extractDateHighlights,
   extractKeywords,
   fleschReadingEase,
@@ -177,7 +177,7 @@ export default function HomePage() {
     () => keywords.filter((keyword) => !STOP_WORDS.has(keyword.toLowerCase())),
     [keywords],
   );
-  const highlightSpans = useMemo(() => computeSpacyStyleHighlights(normalizedText), [normalizedText]);
+  const highlightSpans = useMemo(() => extractKeywordHighlightSpans(normalizedText), [normalizedText]);
   const dateTerms = useMemo(() => extractDateHighlights(normalizedText, 12), [normalizedText]);
   const dateSpans = useMemo(() => {
     if (!dateTerms.length) {
