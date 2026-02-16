@@ -347,33 +347,35 @@ export default function HomePage() {
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-6xl px-4 pb-20 pt-10 sm:px-6">
-        <div className="space-y-10">
-          <Card className="overflow-hidden">
-            <CardHeader>
-              <CardTitle className="text-3xl tracking-tight sm:text-4xl">Simplify long reads with confidence.</CardTitle>
-              <p className="text-sm text-muted-foreground">
+      <main className="mx-auto w-full max-w-7xl px-4 pb-24 pt-12 sm:px-6">
+        <div className="space-y-12">
+          <Card className="overflow-hidden border-border/70 bg-card/92 shadow-[0_22px_58px_rgba(1,8,20,0.55)]">
+            <CardHeader className="space-y-3 pb-5">
+              <CardTitle className="text-4xl font-semibold uppercase tracking-tight sm:text-5xl">Simplify long reads with confidence.</CardTitle>
+              <p className="max-w-4xl text-lg text-muted-foreground">
                 Paste text, see instant readability insights, and opt in to AI-powered
                 simplification per paragraph. By default, everything stays on your device.
               </p>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="source-text">Paste your text</Label>
+                <Label htmlFor="source-text" className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Paste your text
+                </Label>
                 <Textarea
                   id="source-text"
                   placeholder="Drop in an article, policy, or study notes."
                   value={text}
                   onChange={(event) => setText(event.currentTarget.value)}
-                  className="min-h-[220px] text-base leading-relaxed"
+                  className="min-h-[250px] border-border/70 bg-[#1a2f48]/70 text-base leading-relaxed"
                 />
               </div>
               <div className="flex flex-wrap items-end justify-between gap-4">
-                <div className="flex flex-wrap gap-4">
+                <div className="flex flex-wrap gap-5">
                   <div className="space-y-2">
-                    <Label>Simplification level</Label>
+                    <Label className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Simplification level</Label>
                     <Select value={readingLevel} onValueChange={(value) => setReadingLevel(value as ReadingLevel)}>
-                      <SelectTrigger className="w-48">
+                      <SelectTrigger className="w-52 rounded-full border-border/70 bg-[#24425f]/80">
                         <SelectValue placeholder="Select level" />
                       </SelectTrigger>
                       <SelectContent>
@@ -386,9 +388,9 @@ export default function HomePage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Output tone</Label>
+                    <Label className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Output tone</Label>
                     <Select value={tone} onValueChange={(value) => setTone(value as SimplifyTone)}>
-                      <SelectTrigger className="w-48">
+                      <SelectTrigger className="w-52 rounded-full border-border/70 bg-[#24425f]/80">
                         <SelectValue placeholder="Tone" />
                       </SelectTrigger>
                       <SelectContent>
@@ -401,27 +403,27 @@ export default function HomePage() {
                     </Select>
                   </div>
                 </div>
-                <Badge variant="secondary" className="text-sm">
+                <Badge variant="secondary" className="rounded-full border-border/80 bg-background/35 px-4 py-1.5 text-sm font-semibold tracking-wide text-foreground/92">
                   Client-side analysis only
                 </Badge>
               </div>
             </CardContent>
           </Card>
 
-          <div className="grid gap-6 lg:grid-cols-[5fr_7fr]">
-            <Card>
+          <div className="grid gap-7 lg:grid-cols-[5fr_7fr]">
+            <Card className="border-border/70 bg-card/90 shadow-[0_18px_46px_rgba(2,9,20,0.5)]">
               <CardHeader>
-                <CardTitle>Analysis snapshot</CardTitle>
+                <CardTitle className="text-3xl font-semibold uppercase tracking-tight">Analysis snapshot</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">Flesch score: {readability}</Badge>
-                  <Badge variant="secondary">Sentences: {sentences.length}</Badge>
-                  <Badge variant="secondary">Words: {totalWords}</Badge>
+                  <Badge variant="secondary" className="border-border/80 bg-background/35 px-3 py-1 font-semibold">Flesch score: {readability}</Badge>
+                  <Badge variant="secondary" className="border-border/80 bg-background/35 px-3 py-1 font-semibold">Sentences: {sentences.length}</Badge>
+                  <Badge variant="secondary" className="border-border/80 bg-background/35 px-3 py-1 font-semibold">Words: {totalWords}</Badge>
                 </div>
                 <Separator />
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold">Key sentences</p>
+                  <p className="text-base font-semibold">Key sentences</p>
                   {keySentences.length ? (
                     <ul className="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
                       {keySentences.map((sentence) => (
@@ -436,7 +438,7 @@ export default function HomePage() {
                 </div>
                 <Separator />
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold">Top keywords</p>
+                  <p className="text-base font-semibold">Top keywords</p>
                   <div className="flex flex-wrap gap-2">
                   {filteredKeywords.length ? (
                     filteredKeywords.map((keyword) => (
@@ -451,9 +453,9 @@ export default function HomePage() {
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-border/70 bg-card/90 shadow-[0_18px_46px_rgba(2,9,20,0.5)]">
               <CardHeader>
-                <CardTitle>Highlighted reading view</CardTitle>
+                <CardTitle className="text-3xl font-semibold uppercase tracking-tight">Highlighted reading view</CardTitle>
               </CardHeader>
               <CardContent>
                 {sentenceRanges.length ? (
@@ -482,9 +484,9 @@ export default function HomePage() {
             </Card>
           </div>
 
-          <Card>
+          <Card className="border-border/70 bg-card/90 shadow-[0_18px_46px_rgba(2,9,20,0.5)]">
             <CardHeader>
-              <CardTitle className="text-xl">Whole-text LLM options</CardTitle>
+              <CardTitle className="text-3xl font-semibold uppercase tracking-tight">Whole-text LLM options</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Run a single pass over the entire text to extract key information.
               </p>
@@ -492,9 +494,9 @@ export default function HomePage() {
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div className="space-y-2">
-                  <Label>Whole-text option</Label>
+                  <Label className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Whole-text option</Label>
                   <Select value={wholeTextMode} onValueChange={(value) => setWholeTextMode(value as WholeTextMode)}>
-                    <SelectTrigger className="w-64">
+                    <SelectTrigger className="w-64 rounded-full border-border/70 bg-[#24425f]/80">
                       <SelectValue placeholder="Select option" />
                     </SelectTrigger>
                     <SelectContent>
@@ -524,7 +526,7 @@ export default function HomePage() {
                 <p className="text-sm font-medium text-destructive">{wholeTextState.error}</p>
               ) : null}
               {wholeTextResult ? (
-                <div className="rounded-[var(--radius)] border border-border bg-muted/40 p-4">
+                <div className="rounded-[var(--radius)] border border-border/80 bg-muted/50 p-4">
                   <p className="text-sm font-semibold text-foreground">Key information</p>
                   <div className="mt-3 space-y-2 text-sm text-foreground/90">
                     {keyInfoPayload
@@ -555,7 +557,7 @@ export default function HomePage() {
                           const cleaned = line.replace(/^[\-\u2022]\s*/, "");
                           return (
                             <div key={`bullet-${index}`} className="flex gap-2">
-                              <span className="text-muted-foreground">•</span>
+                              <span className="text-muted-foreground">*</span>
                               <p className="flex-1">{cleaned}</p>
                             </div>
                           );
@@ -596,9 +598,9 @@ export default function HomePage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-border/70 bg-card/90 shadow-[0_18px_46px_rgba(2,9,20,0.5)]">
             <CardHeader>
-              <CardTitle className="text-xl">Simplify paragraphs</CardTitle>
+              <CardTitle className="text-3xl font-semibold uppercase tracking-tight">Simplify paragraphs</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Opt in to AI per paragraph. No streaming, just a clean rewrite.
               </p>
@@ -612,7 +614,7 @@ export default function HomePage() {
                   {paragraphs.map((paragraph, index) => {
                     const isLoading = simplifyState.loadingIndex === index;
                     return (
-                      <Card key={`${index}-${paragraph.slice(0, 12)}`} className="border border-border">
+                      <Card key={`${index}-${paragraph.slice(0, 12)}`} className="border border-border/70 bg-muted/30 shadow-none">
                         <CardContent className="space-y-3 pt-6">
                           <p className="text-sm font-semibold text-foreground">Paragraph {index + 1}</p>
                           <p className="text-sm text-foreground/90">{paragraph}</p>

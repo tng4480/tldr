@@ -931,24 +931,30 @@ function App() {
 
   return (
     <div className="assist-ext-shell">
-      <div className="assist-ext-segmented" role="tablist" aria-label="Side panel pages">
-        <button
-          className={`assist-ext-segment ${activePage === "tldr" ? "assist-ext-segment--active" : ""}`}
-          onClick={() => setActivePage("tldr")}
-          role="tab"
-          aria-selected={activePage === "tldr"}
-        >
-          TLDR
-        </button>
-        <button
-          className={`assist-ext-segment ${activePage === "account" ? "assist-ext-segment--active" : ""}`}
-          onClick={() => setActivePage("account")}
-          role="tab"
-          aria-selected={activePage === "account"}
-        >
-          Account
-        </button>
-      </div>
+      <header className="assist-ext-topbar">
+        <div className="assist-ext-brand">
+          <div className="assist-ext-brand-title">Clarity Companion</div>
+          <div className="assist-ext-brand-subtitle">Reading simplifier with opt-in AI</div>
+        </div>
+        <div className="assist-ext-segmented assist-ext-segmented--tabs" role="tablist" aria-label="Side panel pages">
+          <button
+            className={`assist-ext-segment ${activePage === "tldr" ? "assist-ext-segment--active" : ""}`}
+            onClick={() => setActivePage("tldr")}
+            role="tab"
+            aria-selected={activePage === "tldr"}
+          >
+            TLDR
+          </button>
+          <button
+            className={`assist-ext-segment ${activePage === "account" ? "assist-ext-segment--active" : ""}`}
+            onClick={() => setActivePage("account")}
+            role="tab"
+            aria-selected={activePage === "account"}
+          >
+            Account
+          </button>
+        </div>
+      </header>
 
       {activePage === "tldr" ? (
         <>
