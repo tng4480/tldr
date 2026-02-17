@@ -11,23 +11,23 @@ const tiers = [
     name: "Free",
     price: "£0",
     description: "Client-side analysis with a small monthly simplification allowance.",
-    features: ["20 AI simplifications per month", "Local readability insights", "Browser extension-ready"],
+    features: ["20 AI simplifications", "Local readability insights", "Browser extension-ready"],
     tier: "free" as const,
   },
   {
     name: "Starter",
     price: "£9",
     description: "For students and busy teams who need steady help.",
-    features: ["200 AI simplifications per month", "Priority processing", "Access to trials"],
+    features: ["200 AI simplifications per month", "Priority processing", "Access to trial features"],
     tier: "starter" as const,
   },
-  {
-    name: "Pro",
-    price: "£19",
-    description: "For heavy reading workloads and content teams.",
-    features: ["1,000 AI simplifications per month", "Fastest responses", "Team-friendly usage"],
-    tier: "pro" as const,
-  },
+  // {
+  //   name: "Pro",
+  //   price: "£19",
+  //   description: "For heavy reading workloads and content teams.",
+  //   features: ["1,000 AI simplifications per month", "Fastest responses", "Team-friendly usage"],
+  //   tier: "pro" as const,
+  // },
 ];
 
 export default function PricingPage() {
@@ -82,7 +82,7 @@ export default function PricingPage() {
             </Button>
           ) : null}
         </div>
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
+        <div className="mx-auto mt-10 grid w-full max-w-5xl gap-6 md:grid-cols-2">
           {tiers.map((tier) => (
             <Card key={tier.name}>
               <CardHeader className="space-y-4">
