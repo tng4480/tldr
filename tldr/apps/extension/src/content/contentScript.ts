@@ -235,14 +235,14 @@ function ensureFloatingBubble() {
   style.textContent = `
     :host { all: initial; }
     :host {
-      --assist-ext-bg: #071422;
-      --assist-ext-bg-elevated: #10253b;
-      --assist-ext-surface: #173048cc;
-      --assist-ext-border: #365977;
-      --assist-ext-border-soft: #45678999;
-      --assist-ext-text: #edf4ff;
-      --assist-ext-muted: #aec1d8;
-      --assist-ext-accent: #7ed2ff;
+      --assist-ext-bg: #0f1f2c;
+      --assist-ext-bg-elevated: #244b68;
+      --assist-ext-surface: #244b68cc;
+      --assist-ext-border: #4480a7;
+      --assist-ext-border-soft: #4480a799;
+      --assist-ext-text: #e4f2fc;
+      --assist-ext-muted: #a0c2de;
+      --assist-ext-accent: #58aedd;
       --assist-ext-radius: 16px;
     }
     .assist-ext-wrap {

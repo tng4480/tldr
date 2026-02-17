@@ -6,7 +6,7 @@ export const EXTENSION_THEME_COLORS_KEY = "tldrExtensionThemeColors";
 export const DEFAULT_HIGHLIGHT_CONTRAST = 100;
 export const DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD = 60;
 export const DEFAULT_HIGHLIGHT_ALGORITHM = "new" as const;
-export const DEFAULT_EXTENSION_THEME_BASE_COLOR = "#7ed2ff";
+export const DEFAULT_EXTENSION_THEME_BASE_COLOR = "#58aedd";
 
 export type ExtensionThemeColors = {
   bg: string;
