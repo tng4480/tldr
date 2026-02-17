@@ -19,9 +19,9 @@ export default function SiteHeader() {
           </span>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1 sm:gap-2">
-          <Button asChild variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground">
+          {/* <Button asChild variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground">
             <Link href="/examples/hard-text">Hard text demo</Link>
-          </Button>
+          </Button> */}
           <Button asChild variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground">
             <Link href="/pricing">Pricing</Link>
           </Button>

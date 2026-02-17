@@ -31,6 +31,7 @@ const tabState = new Map<number, { text?: string; lastHighlight?: HighlightClick
 const readyTabs = new Set<number>();
 const RSVP_CONTEXT_MENU_ID = "tldr-start-rsvp-selection";
 const pendingRsvpStartByTab = new Map<number, StartRsvpFromText>();
+let actionClickOpensPanel = false;
 const pendingByTab = new Map<
   number,
   {
@@ -320,6 +321,25 @@ function resetTabReadiness(tabId: number) {
   pendingByTab.delete(tabId);
 }
 
+function configureSidePanelActionClick() {
+  if (!chrome.sidePanel?.setPanelBehavior) {
+    warn("bg", "chrome.sidePanel.setPanelBehavior is unavailable; using action.onClicked fallback");
+    actionClickOpensPanel = false;
+    return;
+  }
+
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }, () => {
+    const err = chrome.runtime.lastError;
+    if (err) {
+      warn("bg", "setPanelBehavior failed; using action.onClicked fallback", { error: err.message });
+      actionClickOpensPanel = false;
+      return;
+    }
+    actionClickOpensPanel = true;
+    log("bg", "Configured side panel to open on action click");
+  });
+}
+
 // chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 //   // When a tab navigates, any existing content script is torn down. Treat the tab as not-ready
 //   // until it sends ContentReady again for the new document.
@@ -343,6 +363,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.runtime.onInstalled.addListener(() => {
+  configureSidePanelActionClick();
   chrome.contextMenus.removeAll(() => {
     runtimeLastError("bg", "chrome.contextMenus.removeAll");
     chrome.contextMenus.create(
@@ -354,6 +375,28 @@ chrome.runtime.onInstalled.addListener(() => {
       () => runtimeLastError("bg", "chrome.contextMenus.create"),
     );
   });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  configureSidePanelActionClick();
+});
+
+// Configure immediately when the service worker is evaluated.
+configureSidePanelActionClick();
+
+chrome.action.onClicked.addListener((tab) => {
+  // If openPanelOnActionClick is configured, Chrome will handle this click automatically.
+  if (actionClickOpensPanel) {
+    return;
+  }
+
+  const tabId = tab.id;
+  if (typeof tabId !== "number") {
+    warn("bg", "Action clicked without a tab id");
+    return;
+  }
+
+  chrome.sidePanel.open({ tabId }, () => runtimeLastError("bg", "chrome.sidePanel.open (action click fallback)"));
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {

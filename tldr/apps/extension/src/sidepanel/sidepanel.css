@@ -295,6 +295,36 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.assist-ext-color-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--assist-ext-space-2);
+  border: 1px solid var(--assist-ext-border-soft);
+  border-radius: 12px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--assist-ext-bg-elevated) 48%, transparent);
+}
+
+.assist-ext-color-input {
+  inline-size: 34px;
+  block-size: 24px;
+  border: 1px solid var(--assist-ext-border-soft);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  padding: 1px;
+}
+
+.assist-ext-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.assist-ext-color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 999px;
+}
+
 .assist-ext-range {
   width: 100%;
   accent-color: var(--assist-ext-accent);

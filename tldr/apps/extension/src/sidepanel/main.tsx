@@ -14,8 +14,12 @@ import { createRequestId } from "../shared/messages";
 import { log, runtimeLastError, warn } from "../shared/logger";
 import {
   clampHighlightContrast,
+  DEFAULT_EXTENSION_THEME_BASE_COLOR,
   DEFAULT_HIGHLIGHT_CONTRAST,
+  deriveExtensionThemeColors,
+  EXTENSION_THEME_COLORS_KEY,
   HIGHLIGHT_CONTRAST_KEY,
+  normalizeExtensionThemeBaseColor,
 } from "../shared/settings";
 import "./sidepanel.css";
 
@@ -182,6 +186,7 @@ function App() {
   const [tabId, setTabId] = useState<number | null>(null);
   const [activePage, setActivePage] = useState<SidepanelPage>("tldr");
   const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
+  const [themeBaseColor, setThemeBaseColor] = useState<string>(DEFAULT_EXTENSION_THEME_BASE_COLOR);
   const [pageText, setPageText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [rsvpWpm, setRsvpWpm] = useState<number>(DEFAULT_RSVP_WPM);
@@ -225,6 +230,7 @@ function App() {
   });
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
   const contrastWriteTimeoutRef = useRef<number | null>(null);
+  const themeWriteTimeoutRef = useRef<number | null>(null);
 
   const pendingExtractRef = useRef<{
     requestId: string;
@@ -292,6 +298,22 @@ function App() {
     };
   }, [rsvpIndex, rsvpTokens]);
 
+  const shellThemeStyle = useMemo(() => {
+    const theme = deriveExtensionThemeColors(themeBaseColor);
+    return {
+      "--assist-ext-bg": theme.bg,
+      "--assist-ext-surface": theme.surface,
+      "--assist-ext-bg-elevated": theme.surface,
+      "--assist-ext-surface-soft": `${theme.surface}cc`,
+      "--assist-ext-border": theme.border,
+      "--assist-ext-border-soft": `${theme.border}99`,
+      "--assist-ext-text": theme.text,
+      "--assist-ext-muted": theme.muted,
+      "--assist-ext-accent": theme.accent,
+      "--assist-ext-danger": theme.danger,
+    } as React.CSSProperties;
+  }, [themeBaseColor]);
+
   const sendRsvpCursorUpdate = useCallback(
     (activeTabId: number, token: RsvpToken, options?: { scrollIntoView?: boolean }) => {
       chrome.runtime.sendMessage({
@@ -351,8 +373,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY], (result) => {
+    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, EXTENSION_THEME_COLORS_KEY], (result) => {
       setHighlightContrast(clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]));
+      setThemeBaseColor(normalizeExtensionThemeBaseColor((result as any)?.[EXTENSION_THEME_COLORS_KEY]));
     });
 
     const handler = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
@@ -364,6 +387,10 @@ function App() {
       if (contrastChange) {
         setHighlightContrast(clampHighlightContrast(contrastChange.newValue));
       }
+      const themeChange = (changes as any)?.[EXTENSION_THEME_COLORS_KEY] as chrome.storage.StorageChange | undefined;
+      if (themeChange) {
+        setThemeBaseColor(normalizeExtensionThemeBaseColor(themeChange.newValue));
+      }
     };
 
     chrome.storage.onChanged.addListener(handler);
@@ -371,6 +398,9 @@ function App() {
       chrome.storage.onChanged.removeListener(handler);
       if (contrastWriteTimeoutRef.current) {
         window.clearTimeout(contrastWriteTimeoutRef.current);
+      }
+      if (themeWriteTimeoutRef.current) {
+        window.clearTimeout(themeWriteTimeoutRef.current);
       }
     };
   }, []);
@@ -515,6 +545,29 @@ function App() {
       chrome.storage.sync.set({ [HIGHLIGHT_CONTRAST_KEY]: next });
     }, 120);
   }, []);
+
+  const queueThemeColorWrite = useCallback((next: string) => {
+    if (themeWriteTimeoutRef.current) {
+      window.clearTimeout(themeWriteTimeoutRef.current);
+    }
+    themeWriteTimeoutRef.current = window.setTimeout(() => {
+      chrome.storage.sync.set({ [EXTENSION_THEME_COLORS_KEY]: next });
+    }, 120);
+  }, []);
+
+  const handleThemeColorChange = useCallback(
+    (value: string) => {
+      const next = normalizeExtensionThemeBaseColor(value);
+      setThemeBaseColor(next);
+      queueThemeColorWrite(next);
+    },
+    [queueThemeColorWrite],
+  );
+
+  const handleThemeReset = useCallback(() => {
+    setThemeBaseColor(DEFAULT_EXTENSION_THEME_BASE_COLOR);
+    queueThemeColorWrite(DEFAULT_EXTENSION_THEME_BASE_COLOR);
+  }, [queueThemeColorWrite]);
 
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -834,25 +887,31 @@ function App() {
   }, [rsvpCursorEnabled, rsvpIndex, rsvpIsPlaying, rsvpTokens, sendRsvpCursorUpdate, tabId]);
 
   return (
-    <div className="assist-ext-shell">
-      <div className="assist-ext-segmented assist-ext-segmented--tabs" role="tablist" aria-label="Side panel pages">
-        <button
-          className={`assist-ext-segment assist-ext-segment--tab ${activePage === "tldr" ? "assist-ext-segment--active" : ""}`}
-          onClick={() => setActivePage("tldr")}
-          role="tab"
-          aria-selected={activePage === "tldr"}
-        >
-          TLDR
-        </button>
-        <button
-          className={`assist-ext-segment assist-ext-segment--tab ${activePage === "account" ? "assist-ext-segment--active" : ""}`}
-          onClick={() => setActivePage("account")}
-          role="tab"
-          aria-selected={activePage === "account"}
-        >
-          Account
-        </button>
-      </div>
+    <div className="assist-ext-shell" style={shellThemeStyle}>
+      <header className="assist-ext-topbar">
+        <div className="assist-ext-brand">
+          <div className="assist-ext-brand-title">Clarity Companion</div>
+          <div className="assist-ext-brand-subtitle">Reading simplifier with opt-in AI</div>
+        </div>
+        <div className="assist-ext-segmented assist-ext-segmented--tabs" role="tablist" aria-label="Side panel pages">
+          <button
+            className={`assist-ext-segment ${activePage === "tldr" ? "assist-ext-segment--active" : ""}`}
+            onClick={() => setActivePage("tldr")}
+            role="tab"
+            aria-selected={activePage === "tldr"}
+          >
+            TLDR
+          </button>
+          <button
+            className={`assist-ext-segment ${activePage === "account" ? "assist-ext-segment--active" : ""}`}
+            onClick={() => setActivePage("account")}
+            role="tab"
+            aria-selected={activePage === "account"}
+          >
+            Settings
+          </button>
+        </div>
+      </header>
 
       {activePage === "tldr" ? (
         <>
@@ -1044,6 +1103,28 @@ function App() {
               aria-label="Highlight contrast"
             />
             <div className="assist-ext-meta">Higher values dim non-highlighted text more.</div>
+          </div>
+
+          <div className="assist-ext-field">
+            <div className="assist-ext-field-row">
+              <div className="assist-ext-field-label">Theme color</div>
+              <button className="assist-ext-button" onClick={handleThemeReset} type="button">
+                Reset defaults
+              </button>
+            </div>
+            <label className="assist-ext-color-item">
+              <span className="assist-ext-field-label">Base color</span>
+              <input
+                className="assist-ext-color-input"
+                type="color"
+                value={themeBaseColor}
+                onChange={(event) => handleThemeColorChange(event.currentTarget.value)}
+                aria-label="Theme base color"
+              />
+            </label>
+            <div className="assist-ext-meta">
+              One color drives the whole extension palette. Background, surface, border, and accent stay proportional.
+            </div>
           </div>
 
           {authState.error ? <div className="assist-ext-error">{authState.error}</div> : null}

@@ -7,7 +7,15 @@ import {
 } from "@tldr/core-dom";
 import type { HighlightSpan } from "@tldr/core";
 import { extractKeywordHighlightSpans, splitIntoSentences, wordCount } from "@tldr/core";
-import { clampHighlightContrast, DEFAULT_HIGHLIGHT_CONTRAST, HIGHLIGHT_CONTRAST_KEY } from "../shared/settings";
+import {
+  clampHighlightContrast,
+  DEFAULT_EXTENSION_THEME_BASE_COLOR,
+  DEFAULT_HIGHLIGHT_CONTRAST,
+  deriveExtensionThemeColors,
+  EXTENSION_THEME_COLORS_KEY,
+  HIGHLIGHT_CONTRAST_KEY,
+  normalizeExtensionThemeBaseColor,
+} from "../shared/settings";
 import type {
   ApplyHighlightsRequest,
   ApplyRsvpCursorRequest,
@@ -54,6 +62,7 @@ let deemphasizedRoot: Element | null = null;
 let bubbleInjected = false;
 let bubbleExpanded = false;
 let highlightContrast = DEFAULT_HIGHLIGHT_CONTRAST;
+let extensionThemeBaseColor = DEFAULT_EXTENSION_THEME_BASE_COLOR;
 let storageInitialized = false;
 let rsvpCursorRange: Range | null = null;
 
@@ -184,6 +193,23 @@ function applyRsvpCursor(start: number, end: number, scrollIntoView: boolean, ex
   rsvpCursorRange = range;
 }
 
+function applyThemeToBubbleHost(host: HTMLElement | null) {
+  if (!host) {
+    return;
+  }
+  const theme = deriveExtensionThemeColors(extensionThemeBaseColor);
+  host.style.setProperty("--assist-ext-bg", theme.bg);
+  host.style.setProperty("--assist-ext-surface", theme.surface);
+  host.style.setProperty("--assist-ext-bg-elevated", theme.surface);
+  host.style.setProperty("--assist-ext-surface-soft", `${theme.surface}cc`);
+  host.style.setProperty("--assist-ext-border", theme.border);
+  host.style.setProperty("--assist-ext-border-soft", `${theme.border}99`);
+  host.style.setProperty("--assist-ext-text", theme.text);
+  host.style.setProperty("--assist-ext-muted", theme.muted);
+  host.style.setProperty("--assist-ext-accent", theme.accent);
+  host.style.setProperty("--assist-ext-danger", theme.danger);
+}
+
 function ensureFloatingBubble() {
   if (bubbleInjected) {
     return;
@@ -202,6 +228,7 @@ function ensureFloatingBubble() {
   host.style.display = "none";
   host.style.pointerEvents = "auto";
   document.body.appendChild(host);
+  applyThemeToBubbleHost(host);
 
   const shadow = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");
@@ -535,9 +562,11 @@ function ensureContrastSetting() {
     return;
   }
   storageInitialized = true;
-  chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY], (result) => {
+  chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, EXTENSION_THEME_COLORS_KEY], (result) => {
     highlightContrast = clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]);
+    extensionThemeBaseColor = normalizeExtensionThemeBaseColor((result as any)?.[EXTENSION_THEME_COLORS_KEY]);
     refreshDeemphasis();
+    applyThemeToBubbleHost(document.getElementById(BUBBLE_HOST_ID));
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -546,10 +575,21 @@ function ensureContrastSetting() {
     }
     const change = (changes as any)?.[HIGHLIGHT_CONTRAST_KEY];
     if (!change) {
+      const themeChange = (changes as any)?.[EXTENSION_THEME_COLORS_KEY];
+      if (themeChange) {
+        extensionThemeBaseColor = normalizeExtensionThemeBaseColor(themeChange.newValue);
+        applyThemeToBubbleHost(document.getElementById(BUBBLE_HOST_ID));
+      }
       return;
     }
     highlightContrast = clampHighlightContrast(change.newValue);
     refreshDeemphasis();
+
+    const themeChange = (changes as any)?.[EXTENSION_THEME_COLORS_KEY];
+    if (themeChange) {
+      extensionThemeBaseColor = normalizeExtensionThemeBaseColor(themeChange.newValue);
+      applyThemeToBubbleHost(document.getElementById(BUBBLE_HOST_ID));
+    }
   });
 }
 
