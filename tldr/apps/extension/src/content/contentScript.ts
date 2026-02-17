@@ -208,30 +208,27 @@ function ensureFloatingBubble() {
   style.textContent = `
     :host { all: initial; }
     :host {
-      --assist-ext-bg: #ededed;
-      --assist-ext-border: #d6c4b0;
-      --assist-ext-text: #102937;
-      --assist-ext-muted: #124d54;
-      --assist-ext-accent: #f9744b;
-    }
-    @media (prefers-color-scheme: dark) {
-      :host {
-        --assist-ext-bg: #091d26;
-        --assist-ext-border: #124d54;
-        --assist-ext-text: #ededed;
-        --assist-ext-muted: #d6c4b0;
-      }
+      --assist-ext-bg: #071422;
+      --assist-ext-bg-elevated: #10253b;
+      --assist-ext-surface: #173048cc;
+      --assist-ext-border: #365977;
+      --assist-ext-border-soft: #45678999;
+      --assist-ext-text: #edf4ff;
+      --assist-ext-muted: #aec1d8;
+      --assist-ext-accent: #7ed2ff;
+      --assist-ext-radius: 16px;
     }
     .assist-ext-wrap {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: "Bahnschrift", "Trebuchet MS", "Gill Sans MT", "Segoe UI", sans-serif;
       color: var(--assist-ext-text);
+      line-height: 1.45;
     }
     .assist-ext-bubble {
-      width: 36px;
-      height: 36px;
-      border-radius: 12px;
-      border: 1px solid var(--assist-ext-border);
-      background: var(--assist-ext-bg);
+      width: 40px;
+      height: 40px;
+      border-radius: 14px;
+      border: 1px solid var(--assist-ext-border-soft);
+      background: color-mix(in srgb, #071a31 74%, transparent);
       color: var(--assist-ext-text);
       cursor: pointer;
       display: grid;
@@ -239,8 +236,9 @@ function ensureFloatingBubble() {
       user-select: none;
       font-weight: 600;
       font-size: 12px;
-      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
-      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 16px 34px rgba(1, 10, 24, 0.42);
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
     }
     .assist-ext-bubble img {
       width: 22px;
@@ -251,55 +249,73 @@ function ensureFloatingBubble() {
     }
     .assist-ext-bubble:hover {
       box-shadow:
-        0 0 0 3px color-mix(in srgb, var(--assist-ext-accent) 26%, transparent),
-        0 16px 34px rgba(0, 0, 0, 0.18);
+        0 0 0 3px color-mix(in srgb, var(--assist-ext-accent) 24%, transparent),
+        0 18px 38px rgba(1, 10, 24, 0.5);
     }
     .assist-ext-bubble:active {
       transform: translateY(1px);
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        0 10px 22px rgba(0, 0, 0, 0.16);
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 10px 22px rgba(1, 10, 24, 0.32);
     }
     .assist-ext-panel {
       position: absolute;
       right: 0;
-      bottom: 44px;
-      width: 280px;
-      border-radius: 16px;
-      border: 1px solid var(--assist-ext-border);
-      background: var(--assist-ext-bg);
+      bottom: 52px;
+      width: 296px;
+      border-radius: calc(var(--assist-ext-radius) + 2px);
+      border: 1px solid var(--assist-ext-border-soft);
+      background:
+        radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--assist-ext-accent) 18%, transparent), transparent 44%),
+        linear-gradient(180deg, #0f253d 0%, var(--assist-ext-bg) 52%);
       color: var(--assist-ext-text);
       padding: 12px;
       display: none;
-      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 24px 52px rgba(1, 10, 24, 0.5);
     }
     .assist-ext-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .assist-ext-title { font-weight: 600; font-size: 13px; }
+    .assist-ext-title {
+      font-family: "Franklin Gothic Medium", "Arial Narrow", "Trebuchet MS", sans-serif;
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
     .assist-ext-meta { color: var(--assist-ext-muted); font-size: 12px; }
     .assist-ext-btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .assist-ext-button {
-      border-radius: 12px;
-      border: 1px solid var(--assist-ext-border);
-      background: transparent;
+      border-radius: 999px;
+      border: 1px solid var(--assist-ext-border-soft);
+      background: color-mix(in srgb, var(--assist-ext-bg-elevated) 62%, transparent);
       color: var(--assist-ext-text);
-      padding: 6px 8px;
+      padding: 6px 10px;
       font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
-      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.10);
-      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
     }
     .assist-ext-button:hover {
       box-shadow:
-        0 0 0 3px color-mix(in srgb, var(--assist-ext-accent) 26%, transparent),
-        0 12px 26px rgba(0, 0, 0, 0.14);
+        0 0 0 3px color-mix(in srgb, var(--assist-ext-accent) 24%, transparent),
+        0 12px 26px rgba(1, 10, 24, 0.36);
     }
     .assist-ext-button:active {
       transform: translateY(1px);
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        0 6px 14px rgba(0, 0, 0, 0.12);
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 6px 14px rgba(1, 10, 24, 0.28);
     }
-    .assist-ext-button--primary { border-color: var(--assist-ext-accent); color: var(--assist-ext-accent); font-weight: 600; }
+    .assist-ext-button:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--assist-ext-accent) 84%, white);
+      outline-offset: 2px;
+    }
+    .assist-ext-button--primary {
+      border-color: color-mix(in srgb, var(--assist-ext-accent) 68%, #b8e8ff);
+      color: var(--assist-ext-accent);
+      font-weight: 600;
+    }
   `;
 
   const wrap = document.createElement("div");
@@ -331,7 +347,7 @@ function ensureFloatingBubble() {
   const meta = document.createElement("div");
   meta.className = "assist-ext-meta";
   meta.id = "tldr-bubble-meta";
-  meta.textContent = "Detecting page text…";
+  meta.textContent = "Detecting page text...";
 
   const btnRow = document.createElement("div");
   btnRow.className = "assist-ext-btn-row";
