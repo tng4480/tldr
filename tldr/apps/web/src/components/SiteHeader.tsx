@@ -26,6 +26,9 @@ export default function SiteHeader() {
             <Link href="/pricing">Pricing</Link>
           </Button>
           <Button asChild variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground">
+            <Link href="/extension">Extension</Link>
+          </Button>
+          <Button asChild variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground">
             <Link href="/read-pdf">Read Files</Link>
           </Button>
           <Button asChild variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground">
