@@ -27,6 +27,44 @@ type KeyInfoPayload = {
 
 const KEY_INFO_HEADINGS = ["Important dates", "Things to do", "Things to know"] as const;
 
+function normalizeCacheText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+type CacheLookupPlan = {
+  primaryHash: string;
+  orderedHashes: string[];
+};
+
+async function buildCacheLookupPlan(text: string, mode: WholeTextMode): Promise<CacheLookupPlan> {
+  const normalizedText = normalizeCacheText(text);
+
+  const hashInputs = [
+    `${normalizedText}:${mode}`,
+    `${text}:${mode}`,
+    normalizedText,
+    text,
+    `${normalizedText}:plain`,
+    `${text}:plain`,
+  ];
+
+  const orderedHashes: string[] = [];
+  const seenHashes = new Set<string>();
+
+  for (const input of hashInputs) {
+    const hash = await computeStableHash(input);
+    if (!seenHashes.has(hash)) {
+      seenHashes.add(hash);
+      orderedHashes.push(hash);
+    }
+  }
+
+  return {
+    primaryHash: orderedHashes[0]!,
+    orderedHashes,
+  };
+}
+
 function stripJsonFence(value: string): string {
   const trimmed = value.trim();
   const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -118,16 +156,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const contentHash = await computeStableHash(`${text}:${mode}`);
-
-  const { data: cached } = await supabaseAdmin
+  const cacheLookup = await buildCacheLookupPlan(text, mode);
+  const { data: cachedRows } = await supabaseAdmin
     .from("cached_simplifications")
-    .select("simplified_text")
-    .eq("content_hash", contentHash)
-    .maybeSingle();
+    .select("content_hash, simplified_text")
+    .in("content_hash", cacheLookup.orderedHashes);
 
-  if (cached?.simplified_text) {
-    return NextResponse.json({ resultText: cached.simplified_text, cached: true });
+  if (cachedRows?.length) {
+    const cachedByHash = new Map(cachedRows.map((row) => [row.content_hash, row.simplified_text]));
+    const cachedText = cacheLookup.orderedHashes
+      .map((hash) => cachedByHash.get(hash))
+      .find((value): value is string => typeof value === "string" && value.length > 0);
+    if (cachedText) {
+      return NextResponse.json({ resultText: cachedText, cached: true });
+    }
   }
 
   const { data: profile, error: profileError } = await supabaseAdmin
@@ -167,12 +209,20 @@ export async function POST(request: Request) {
   const parsedPayload = parseKeyInfoPayload(llmResult.simplifiedText);
   const resultText = parsedPayload ? JSON.stringify(parsedPayload) : llmResult.simplifiedText;
 
-  await supabaseAdmin.from("cached_simplifications").insert({
-    content_hash: contentHash,
-    reading_level: "plain",
-    simplified_text: resultText,
-    model: llmResult.model ?? null,
-  });
+  await supabaseAdmin
+    .from("cached_simplifications")
+    .upsert(
+      {
+        content_hash: cacheLookup.primaryHash,
+        reading_level: "plain",
+        simplified_text: resultText,
+        model: llmResult.model ?? null,
+      },
+      {
+        onConflict: "content_hash",
+        ignoreDuplicates: true,
+      },
+    );
 
   await supabaseAdmin.from("usage_events").insert({
     user_id: userId,

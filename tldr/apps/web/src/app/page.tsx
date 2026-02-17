@@ -410,7 +410,7 @@ export default function HomePage() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-7 lg:grid-cols-[5fr_7fr]">
+          {/* <div className="grid gap-7 lg:grid-cols-[5fr_7fr]">
             <Card className="border-border/70 bg-card/90 shadow-[0_18px_46px_rgba(2,9,20,0.5)]">
               <CardHeader>
                 <CardTitle className="text-3xl font-semibold uppercase tracking-tight">Analysis snapshot</CardTitle>
@@ -482,7 +482,7 @@ export default function HomePage() {
                 )}
               </CardContent>
             </Card>
-          </div>
+          </div> */}
 
           <Card className="border-border/70 bg-card/90 shadow-[0_18px_46px_rgba(2,9,20,0.5)]">
             <CardHeader>
