@@ -6,7 +6,7 @@ import Providers from "@/components/Providers";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "Clarity Companion",
+  title: "tldr",
   description: "Simplify and understand reading material with on-demand explanations.",
 };
 

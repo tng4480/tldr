@@ -890,8 +890,8 @@ function App() {
     <div className="assist-ext-shell" style={shellThemeStyle}>
       <header className="assist-ext-topbar">
         <div className="assist-ext-brand">
-          <div className="assist-ext-brand-title">Clarity Companion</div>
-          <div className="assist-ext-brand-subtitle">Reading simplifier with opt-in AI</div>
+          <div className="assist-ext-brand-title">tldr</div>
+          <div className="assist-ext-brand-subtitle">Reading simplifier</div>
         </div>
         <div className="assist-ext-segmented assist-ext-segmented--tabs" role="tablist" aria-label="Side panel pages">
           <button

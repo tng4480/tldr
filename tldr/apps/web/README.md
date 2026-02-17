@@ -1,6 +1,6 @@
-# Clarity Companion
+# tldr
 
-Clarity Companion is a website-first reading simplifier that offers instant, client-side analysis and optional AI-powered simplification per paragraph. It is designed to support a future browser extension.
+tldr is a website-first reading simplifier that offers instant, client-side analysis and optional AI-powered simplification per paragraph. It is designed to support a future browser extension.
 
 ## Features
 
