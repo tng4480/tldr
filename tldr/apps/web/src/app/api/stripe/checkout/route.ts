@@ -6,10 +6,9 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-const PRICE_MAP = {
-  starter: process.env.STRIPE_STARTER_PRICE_ID,
-  pro: process.env.STRIPE_PRO_PRICE_ID,
-};
+const STARTER_PRICE_ID = process.env.STRIPE_STARTER_PRICE_ID;
+const SUCCESS_URL = process.env.STRIPE_SUCCESS_URL;
+const CANCEL_URL = process.env.STRIPE_CANCEL_URL;
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -20,11 +19,22 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const tier = body?.tier as keyof typeof PRICE_MAP;
-  const priceId = PRICE_MAP[tier];
+  const tier = body?.tier as "free" | "starter" | "pro" | undefined;
 
-  if (!priceId) {
+  if (tier === "free") {
+    return NextResponse.json({ error: "Free plan does not require checkout." }, { status: 400 });
+  }
+
+  if (tier === "pro") {
+    return NextResponse.json({ error: "Pro is unavailable during public beta." }, { status: 400 });
+  }
+
+  if (tier !== "starter") {
     return NextResponse.json({ error: "Invalid tier." }, { status: 400 });
+  }
+
+  if (!STARTER_PRICE_ID || !SUCCESS_URL || !CANCEL_URL) {
+    return NextResponse.json({ error: "Billing configuration is incomplete." }, { status: 500 });
   }
 
   const { data: profile } = await supabaseAdmin
@@ -50,10 +60,10 @@ export async function POST(request: Request) {
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: stripeCustomerId,
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: [{ price: STARTER_PRICE_ID, quantity: 1 }],
     allow_promotion_codes: true,
-    success_url: process.env.STRIPE_SUCCESS_URL ?? "",
-    cancel_url: process.env.STRIPE_CANCEL_URL ?? "",
+    success_url: SUCCESS_URL,
+    cancel_url: CANCEL_URL,
   });
 
   return NextResponse.json({ url: checkoutSession.url });

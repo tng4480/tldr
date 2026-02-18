@@ -28,6 +28,7 @@ export default function AccountPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [revokeLoading, setRevokeLoading] = useState(false);
 
   useEffect(() => {
     async function fetchProfile() {
@@ -64,7 +65,7 @@ export default function AccountPage() {
       }
       const data = await response.json();
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to open billing portal.");
@@ -95,6 +96,23 @@ export default function AccountPage() {
       setError(err instanceof Error ? err.message : "Unable to mint token.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRevokeTokens() {
+    setRevokeLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/extension/token/revoke", { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Unable to revoke extension tokens.");
+      }
+      setProfile((prev) => (prev ? { ...prev, extensionToken: undefined } : prev));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to revoke extension tokens.");
+    } finally {
+      setRevokeLoading(false);
     }
   }
 
@@ -187,11 +205,16 @@ export default function AccountPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Generate a token for the upcoming browser extension. Keep it private.
+                    Generate a token for the browser extension. Keep it private.
                   </p>
-                  <Button variant="outline" onClick={handleToken} disabled={loading}>
-                    Mint extension token
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={handleToken} disabled={loading || revokeLoading}>
+                      Mint extension token
+                    </Button>
+                    <Button variant="outline" onClick={handleRevokeTokens} disabled={loading || revokeLoading}>
+                      {revokeLoading ? "Revoking..." : "Revoke all tokens"}
+                    </Button>
+                  </div>
                   {profile.extensionToken ? (
                     <Alert>
                       <AlertTitle>New extension token</AlertTitle>

@@ -19,6 +19,7 @@ export default function ExtensionPage() {
   const [mintError, setMintError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [mintedToken, setMintedToken] = useState<MintedToken | null>(null);
+  const [revoking, setRevoking] = useState(false);
 
   async function handleMintToken() {
     setMinting(true);
@@ -55,6 +56,24 @@ export default function ExtensionPage() {
     }
   }
 
+  async function handleRevokeTokens() {
+    setRevoking(true);
+    setMintError(null);
+    try {
+      const response = await fetch("/api/extension/token/revoke", { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Unable to revoke extension tokens.");
+      }
+      setMintedToken(null);
+      setCopied(false);
+    } catch (error) {
+      setMintError(error instanceof Error ? error.message : "Unable to revoke extension tokens.");
+    } finally {
+      setRevoking(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -83,9 +102,14 @@ export default function ExtensionPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {session?.user ? (
-                  <Button onClick={handleMintToken} disabled={minting}>
-                    {minting ? "Minting..." : "Mint extension token"}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={handleMintToken} disabled={minting || revoking}>
+                      {minting ? "Minting..." : "Mint extension token"}
+                    </Button>
+                    <Button variant="outline" onClick={handleRevokeTokens} disabled={minting || revoking}>
+                      {revoking ? "Revoking..." : "Revoke all tokens"}
+                    </Button>
+                  </div>
                 ) : (
                   <Button onClick={() => signIn("google")}>Sign in to mint token</Button>
                 )}
@@ -163,6 +187,10 @@ export default function ExtensionPage() {
                 To start from a specific place: highlight/select the text where you want to begin, right-click, and
                 choose <span className="text-foreground">Start RSVP</span>. The sidepanel opens and starts from your
                 selected location.
+              </p>
+              <p>
+                If cookie-based connection fails, mint a token here and paste it into the sidepanel account tab using{" "}
+                <span className="text-foreground">Use pasted token</span>.
               </p>
               <p>
                 Use <span className="text-foreground">Pause/Resume</span>,{" "}

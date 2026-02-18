@@ -291,6 +291,20 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.assist-ext-input {
+  width: 100%;
+  border: 1px solid var(--assist-ext-border-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--assist-ext-bg-elevated) 55%, transparent);
+  color: var(--assist-ext-text);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.assist-ext-input::placeholder {
+  color: color-mix(in srgb, var(--assist-ext-muted) 85%, #c9e2f6);
+}
+
 .assist-ext-color-item {
   display: flex;
   align-items: center;

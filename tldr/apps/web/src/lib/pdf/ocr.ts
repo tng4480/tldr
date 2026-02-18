@@ -13,7 +13,8 @@ class NoopOcrProvider implements OcrProvider {
     return false;
   }
 
-  async run(_page: OcrPageInput): Promise<string> {
+  async run(page: OcrPageInput): Promise<string> {
+    void page;
     throw new Error("OCR provider is not configured.");
   }
 }

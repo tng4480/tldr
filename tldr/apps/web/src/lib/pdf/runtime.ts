@@ -1,7 +1,66 @@
+export type PdfJsGlobalWorkerOptions = {
+  workerSrc: string;
+};
+
+export type PdfJsUtil = {
+  transform(a: number[], b: number[]): number[];
+};
+
+export type PdfJsRuntime = {
+  GlobalWorkerOptions: PdfJsGlobalWorkerOptions;
+  Util: PdfJsUtil;
+  getDocument(input: { data: Uint8Array }): {
+    promise: Promise<{
+      numPages: number;
+      getPage(pageNumber: number): Promise<{
+        getViewport(input: { scale: number }): { width: number; height: number; transform: number[] };
+        render(input: {
+          canvasContext: CanvasRenderingContext2D;
+          viewport: { width: number; height: number; transform: number[] };
+        }): { promise: Promise<void> };
+        getTextContent(): Promise<{
+          items: Array<{
+            str?: string;
+            width?: number;
+            height?: number;
+            transform?: number[];
+            hasEOL?: boolean;
+          }>;
+        }>;
+      }>;
+      destroy(): Promise<void>;
+    }>;
+  };
+};
+
+export type PdfLibPage = {
+  drawRectangle(input: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    color: unknown;
+    opacity: number;
+    borderWidth: number;
+  }): void;
+};
+
+export type PdfLibDocument = {
+  getPages(): PdfLibPage[];
+  save(): Promise<Uint8Array>;
+};
+
+export type PdfLibRuntime = {
+  PDFDocument: {
+    load(bytes: Uint8Array): Promise<PdfLibDocument>;
+  };
+  rgb(r: number, g: number, b: number): unknown;
+};
+
 declare global {
   interface Window {
-    pdfjsLib?: any;
-    PDFLib?: any;
+    pdfjsLib?: PdfJsRuntime;
+    PDFLib?: PdfLibRuntime;
   }
 }
 
@@ -25,7 +84,7 @@ function loadScript(src: string): Promise<void> {
   return promise;
 }
 
-export async function loadPdfJsRuntime() {
+export async function loadPdfJsRuntime(): Promise<PdfJsRuntime> {
   if (!window.pdfjsLib) {
     const candidates = [
       "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js",
@@ -57,7 +116,7 @@ export async function loadPdfJsRuntime() {
   return pdfjs;
 }
 
-export async function loadPdfLibRuntime() {
+export async function loadPdfLibRuntime(): Promise<PdfLibRuntime> {
   if (!window.PDFLib) {
     await loadScript("https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js");
   }

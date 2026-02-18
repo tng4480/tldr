@@ -113,6 +113,11 @@ export type AuthConnectRequest = MessageBase & {
   type: "AuthConnectRequest";
 };
 
+export type AuthSetTokenRequest = MessageBase & {
+  type: "AuthSetTokenRequest";
+  token: string;
+};
+
 export type AuthClearRequest = MessageBase & {
   type: "AuthClearRequest";
 };
@@ -134,6 +139,7 @@ export type ExtensionMessage =
   | AuthStatusRequest
   | AuthStatusResult
   | AuthConnectRequest
+  | AuthSetTokenRequest
   | AuthClearRequest;
 
 export function createRequestId(prefix: string): string {

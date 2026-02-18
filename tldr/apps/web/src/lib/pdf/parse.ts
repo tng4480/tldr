@@ -1,10 +1,11 @@
 import type { ParsedPdfDocument, PdfPageData, PdfTextItem, PdfProcessingWarning } from "./types";
+import type { PdfJsRuntime } from "./runtime";
 import { loadPdfJsRuntime } from "./runtime";
 import type { RenderMode } from "@/lib/file/baseTypes";
 
 const DEFAULT_SCALE = 1.35;
 
-let cachedPdfJs: Promise<any> | null = null;
+let cachedPdfJs: Promise<PdfJsRuntime> | null = null;
 
 async function getPdfJs() {
   if (!cachedPdfJs) {

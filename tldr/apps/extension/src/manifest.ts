@@ -12,7 +12,7 @@ export default defineManifest(() => ({
     128: "tldr128.png",
   },
   permissions: ["activeTab", "sidePanel", "storage", "scripting", "contextMenus"],
-  host_permissions: ["<all_urls>", "http://localhost:3000/*"],
+  host_permissions: ["https://*/*", "http://*/*"],
   background: {
     service_worker: "src/background/serviceWorker.ts",
     type: "module",
@@ -22,7 +22,7 @@ export default defineManifest(() => ({
   },
   content_scripts: [
     {
-      matches: ["<all_urls>"],
+      matches: ["https://*/*", "http://*/*"],
       js: ["src/content/contentScript.ts"],
       run_at: "document_idle",
     },
@@ -30,7 +30,7 @@ export default defineManifest(() => ({
   web_accessible_resources: [
     {
       resources: ["tldr.png"],
-      matches: ["<all_urls>"],
+      matches: ["https://*/*", "http://*/*"],
     },
   ],
   action: {

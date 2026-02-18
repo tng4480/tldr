@@ -2,10 +2,10 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { createHash } from "crypto";
 
 export type ExtensionAuthResult =
-  | { ok: true; userId: string }
+  | { ok: true; userId: string; expiresAt: string; tokenHash: string }
   | { ok: false; error: "missing" | "invalid" | "expired" };
 
-function parseBearerToken(value: string | null): string | null {
+export function parseBearerToken(value: string | null): string | null {
   if (!value) {
     return null;
   }
@@ -41,6 +41,5 @@ export async function authenticateExtensionToken(request: Request): Promise<Exte
     return { ok: false, error: "expired" };
   }
 
-  return { ok: true, userId: data.user_id as string };
+  return { ok: true, userId: data.user_id as string, expiresAt, tokenHash };
 }
-

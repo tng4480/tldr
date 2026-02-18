@@ -1,5 +1,6 @@
 import type { RenderMode } from "@/lib/file/baseTypes";
 import type { ParsedDocxDocument } from "./types";
+import type { MammothMessage } from "./runtime";
 import { loadMammothRuntime } from "./runtime";
 
 function normalizeExtractedText(value: string): string {
@@ -11,23 +12,26 @@ export async function parseDocxFile(file: File, mode: RenderMode): Promise<Parse
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
 
+  const normalizeMessages = (messages: MammothMessage[]) =>
+    messages
+      .filter((item) => typeof item?.message === "string")
+      .map((item) => ({
+        code: `DOCX_${String(item.type ?? "INFO").toUpperCase()}`,
+        message: String(item.message),
+      }));
+
   const rawTextResult = await mammoth.extractRawText({ arrayBuffer: buffer });
   const rawText = typeof rawTextResult?.value === "string" ? rawTextResult.value : "";
   const extractedText = normalizeExtractedText(rawText);
-  const warnings = (rawTextResult?.messages ?? [])
-    .filter((item: any) => typeof item?.message === "string")
-    .map((item: any) => ({
-      code: `DOCX_${String(item.type ?? "INFO").toUpperCase()}`,
-      message: String(item.message),
-    }));
+  const warnings = normalizeMessages(rawTextResult?.messages ?? []);
 
   let html: string | null = null;
   if (mode === "preserve_layout") {
     const htmlResult = await mammoth.convertToHtml(
       { arrayBuffer: buffer },
       {
-        convertImage: mammoth.images.imgElement((image: any) =>
-          image.read("base64").then((content: string) => ({
+        convertImage: mammoth.images.imgElement((image) =>
+          image.read("base64").then((content) => ({
             src: `data:${image.contentType};base64,${content}`,
           })),
         ),
@@ -35,14 +39,7 @@ export async function parseDocxFile(file: File, mode: RenderMode): Promise<Parse
     );
     html = typeof htmlResult?.value === "string" ? htmlResult.value : "";
     if (Array.isArray(htmlResult?.messages)) {
-      htmlResult.messages
-        .filter((item: any) => typeof item?.message === "string")
-        .forEach((item: any) => {
-          warnings.push({
-            code: `DOCX_${String(item.type ?? "INFO").toUpperCase()}`,
-            message: String(item.message),
-          });
-        });
+      warnings.push(...normalizeMessages(htmlResult.messages));
     }
   }
 

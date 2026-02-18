@@ -36,6 +36,20 @@ type CacheLookupPlan = {
   orderedHashes: string[];
 };
 
+type ParsedSections = {
+  [heading: string]: unknown;
+};
+
+type ParsedEvent = {
+  title?: unknown;
+  start?: unknown;
+  end?: unknown;
+  timezone?: unknown;
+  location?: unknown;
+  details?: unknown;
+  calendarUrl?: unknown;
+};
+
 async function buildCacheLookupPlan(text: string, mode: WholeTextMode): Promise<CacheLookupPlan> {
   const normalizedText = normalizeCacheText(text);
 
@@ -84,21 +98,25 @@ function parseKeyInfoPayload(rawText: string): KeyInfoPayload | null {
     if (!parsed || typeof parsed !== "object") {
       return null;
     }
-    const sections = (parsed as any).sections;
+    const sections = (parsed as { sections?: unknown }).sections;
     if (!sections || typeof sections !== "object") {
       return null;
     }
     const normalizedSections: Record<string, string[]> = {};
+    const typedSections = sections as ParsedSections;
     KEY_INFO_HEADINGS.forEach((heading) => {
-      const items = Array.isArray((sections as any)[heading]) ? ((sections as any)[heading] as unknown[]) : [];
+      const maybeItems = typedSections[heading];
+      const items = Array.isArray(maybeItems) ? maybeItems : [];
       normalizedSections[heading] = items
         .filter((item): item is string => typeof item === "string")
         .map((item) => item.trim())
         .filter(Boolean);
     });
-    const events = Array.isArray((parsed as any).events) ? ((parsed as any).events as unknown[]) : [];
+    const events = Array.isArray((parsed as { events?: unknown }).events)
+      ? ((parsed as { events?: unknown[] }).events ?? [])
+      : [];
     const normalizedEvents = events
-      .filter((event): event is Record<string, unknown> => !!event && typeof event === "object")
+      .filter((event): event is ParsedEvent => !!event && typeof event === "object")
       .map((event) => {
         const title = typeof event.title === "string" ? event.title.trim() : "";
         const normalizedEvent = {
@@ -156,22 +174,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const cacheLookup = await buildCacheLookupPlan(text, mode);
-  const { data: cachedRows } = await supabaseAdmin
-    .from("cached_simplifications")
-    .select("content_hash, simplified_text")
-    .in("content_hash", cacheLookup.orderedHashes);
-
-  if (cachedRows?.length) {
-    const cachedByHash = new Map(cachedRows.map((row) => [row.content_hash, row.simplified_text]));
-    const cachedText = cacheLookup.orderedHashes
-      .map((hash) => cachedByHash.get(hash))
-      .find((value): value is string => typeof value === "string" && value.length > 0);
-    if (cachedText) {
-      return NextResponse.json({ resultText: cachedText, cached: true });
-    }
-  }
-
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("user_profiles")
     .select("plan, subscription_status, trial_active, trial_ends_at, monthly_usage, monthly_usage_period")
@@ -205,6 +207,44 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Monthly limit reached." }, { status: 402 });
   }
 
+  const cacheLookup = await buildCacheLookupPlan(text, mode);
+  const { data: cachedRows } = await supabaseAdmin
+    .from("cached_simplifications")
+    .select("content_hash, simplified_text, model")
+    .in("content_hash", cacheLookup.orderedHashes);
+
+  if (cachedRows?.length) {
+    const cachedByHash = new Map(cachedRows.map((row) => [row.content_hash, row]));
+    const cachedEntry = cacheLookup.orderedHashes
+      .map((hash) => cachedByHash.get(hash))
+      .find(
+        (
+          row,
+        ): row is {
+          content_hash: string;
+          simplified_text: string;
+          model: string | null;
+        } => typeof row?.simplified_text === "string" && row.simplified_text.length > 0,
+      );
+    if (cachedEntry) {
+      await supabaseAdmin.from("usage_events").insert({
+        user_id: userId,
+        event_type: "whole_text",
+        model: cachedEntry.model ?? null,
+        input_tokens: null,
+        output_tokens: null,
+        total_tokens: null,
+      });
+
+      await supabaseAdmin
+        .from("user_profiles")
+        .update({ monthly_usage: monthlyUsage + 1, monthly_usage_period: entitlements.usagePeriod })
+        .eq("id", userId);
+
+      return NextResponse.json({ resultText: cachedEntry.simplified_text, cached: true, charged: true });
+    }
+  }
+
   const llmResult = await extractKeyInfoWithLlm(text, mode);
   const parsedPayload = parseKeyInfoPayload(llmResult.simplifiedText);
   const resultText = parsedPayload ? JSON.stringify(parsedPayload) : llmResult.simplifiedText;
@@ -226,7 +266,7 @@ export async function POST(request: Request) {
 
   await supabaseAdmin.from("usage_events").insert({
     user_id: userId,
-    event_type: "simplify",
+    event_type: "whole_text",
     model: llmResult.model ?? null,
     input_tokens: llmResult.inputTokens ?? null,
     output_tokens: llmResult.outputTokens ?? null,
@@ -238,5 +278,5 @@ export async function POST(request: Request) {
     .update({ monthly_usage: monthlyUsage + 1, monthly_usage_period: entitlements.usagePeriod })
     .eq("id", userId);
 
-  return NextResponse.json({ resultText, cached: false });
+  return NextResponse.json({ resultText, cached: false, charged: true });
 }

@@ -1,6 +1,37 @@
+export type MammothMessage = {
+  type?: string;
+  message?: string;
+};
+
+export type MammothImage = {
+  contentType?: string;
+  read(format: "base64"): Promise<string>;
+};
+
+export type MammothRuntime = {
+  extractRawText(input: { arrayBuffer: ArrayBuffer }): Promise<{
+    value?: string;
+    messages?: MammothMessage[];
+  }>;
+  convertToHtml(
+    input: { arrayBuffer: ArrayBuffer },
+    options: {
+      convertImage: (image: MammothImage) => Promise<{ src: string }>;
+    },
+  ): Promise<{
+    value?: string;
+    messages?: MammothMessage[];
+  }>;
+  images: {
+    imgElement(
+      resolver: (image: MammothImage) => Promise<{ src: string }>,
+    ): (image: MammothImage) => Promise<{ src: string }>;
+  };
+};
+
 declare global {
   interface Window {
-    mammoth?: any;
+    mammoth?: MammothRuntime;
   }
 }
 
@@ -24,7 +55,7 @@ function loadScript(src: string): Promise<void> {
   return promise;
 }
 
-export async function loadMammothRuntime() {
+export async function loadMammothRuntime(): Promise<MammothRuntime> {
   if (!window.mammoth) {
     const candidates = [
       "https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js",

@@ -11,6 +11,7 @@ import type {
   StartRsvpFromText,
 } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
+import { getApiBase } from "../shared/config";
 import { log, runtimeLastError, warn } from "../shared/logger";
 import {
   clampHighlightContrast,
@@ -181,7 +182,13 @@ function buildRsvpSentenceStartIndexes(tokens: RsvpToken[], text: string, baseOf
 }
 
 function App() {
-  const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+  const apiBase = useMemo(() => {
+    try {
+      return getApiBase();
+    } catch {
+      return "";
+    }
+  }, []);
 
   const [tabId, setTabId] = useState<number | null>(null);
   const [activePage, setActivePage] = useState<SidepanelPage>("tldr");
@@ -229,6 +236,7 @@ function App() {
     error: null,
   });
   const [keyInfoResult, setKeyInfoResult] = useState<string>("");
+  const [manualToken, setManualToken] = useState<string>("");
   const contrastWriteTimeoutRef = useRef<number | null>(null);
   const themeWriteTimeoutRef = useRef<number | null>(null);
 
@@ -408,6 +416,10 @@ function App() {
   const loadAccountProfile = useCallback(async () => {
     if (!authState.isAuthenticated) {
       setAccountState({ isLoading: false, profile: null, error: null });
+      return;
+    }
+    if (!apiBase) {
+      setAccountState({ isLoading: false, profile: null, error: "Extension API base URL is not configured." });
       return;
     }
 
@@ -621,10 +633,18 @@ function App() {
   }, [authState.isAuthenticated, loadAccountProfile]);
 
   const handleSignIn = useCallback(() => {
+    if (!apiBase) {
+      setAuthState((prev) => ({ ...prev, error: "Extension API base URL is not configured." }));
+      return;
+    }
     chrome.tabs.create({ url: `${apiBase}/api/auth/signin` }, () => runtimeLastError("sp", "chrome.tabs.create sign-in"));
   }, [apiBase]);
 
   const handleReadPdf = useCallback(() => {
+    if (!apiBase) {
+      setError("Extension API base URL is not configured.");
+      return;
+    }
     chrome.tabs.create({ url: `${apiBase}/read-pdf` }, () => runtimeLastError("sp", "chrome.tabs.create read-pdf"));
   }, [apiBase]);
 
@@ -673,6 +693,38 @@ function App() {
       },
     );
   }, []);
+
+  const handleUseManualToken = useCallback(() => {
+    const token = manualToken.trim();
+    if (!token) {
+      setAuthState((prev) => ({ ...prev, error: "Paste a token first." }));
+      return;
+    }
+    setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
+    chrome.runtime.sendMessage(
+      {
+        type: "AuthSetTokenRequest",
+        requestId: createRequestId("auth-set-token"),
+        token,
+      },
+      (response: AuthStatusResult | undefined) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          setAuthState({ isLoading: false, isAuthenticated: false, expiresAt: null, error: err.message ?? "Unknown error" });
+          return;
+        }
+        setAuthState({
+          isLoading: false,
+          isAuthenticated: Boolean(response?.isAuthenticated),
+          expiresAt: response?.expiresAt ?? null,
+          error: response?.error ?? null,
+        });
+        if (response?.isAuthenticated) {
+          setManualToken("");
+        }
+      },
+    );
+  }, [manualToken]);
 
   const handleHighlightKeywords = useCallback(() => {
     void (async () => {
@@ -1066,6 +1118,32 @@ function App() {
             )}
           </div>
 
+          {!authState.isAuthenticated ? (
+            <div className="assist-ext-field">
+              <div className="assist-ext-field-label">Manual token fallback</div>
+              <input
+                className="assist-ext-input"
+                type="password"
+                value={manualToken}
+                onChange={(event) => setManualToken(event.currentTarget.value)}
+                placeholder="Paste extension token from tldr /extension page"
+                aria-label="Manual extension token"
+              />
+              <div className="assist-ext-row">
+                <button
+                  className="assist-ext-button"
+                  onClick={handleUseManualToken}
+                  disabled={authState.isLoading || !manualToken.trim()}
+                >
+                  Use pasted token
+                </button>
+              </div>
+              <div className="assist-ext-meta">
+                Use this if cookie-based connect fails. Tokens can be minted and revoked on the tldr website.
+              </div>
+            </div>
+          ) : null}
+
           {authState.isAuthenticated ? (
             accountState.isLoading ? (
               <div className="assist-ext-status">Loading account details...</div>
@@ -1129,6 +1207,7 @@ function App() {
 
           {authState.error ? <div className="assist-ext-error">{authState.error}</div> : null}
           {accountState.error ? <div className="assist-ext-error">{accountState.error}</div> : null}
+          {!apiBase ? <div className="assist-ext-error">VITE_API_BASE_URL is not configured for this build.</div> : null}
         </section>
       )}
 

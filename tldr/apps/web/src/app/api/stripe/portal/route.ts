@@ -5,6 +5,7 @@ import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
+const SUCCESS_URL = process.env.STRIPE_SUCCESS_URL;
 
 export async function POST() {
   const session = await getServerSession(authOptions);
@@ -23,10 +24,13 @@ export async function POST() {
   if (!profile?.stripe_customer_id) {
     return NextResponse.json({ error: "Customer missing." }, { status: 400 });
   }
+  if (!SUCCESS_URL) {
+    return NextResponse.json({ error: "Billing configuration is incomplete." }, { status: 500 });
+  }
 
   const portalSession = await stripe.billingPortal.sessions.create({
     customer: profile.stripe_customer_id,
-    return_url: process.env.STRIPE_SUCCESS_URL ?? "",
+    return_url: SUCCESS_URL,
   });
 
   return NextResponse.json({ url: portalSession.url });

@@ -1,29 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { buildGoogleCalendarTemplateUrl } from "@/lib/googleCalendar";
 import type { SimplifyTone, WholeTextMode } from "@/lib/llm";
-import {
-  detectHardSentences,
-  extractKeywordHighlightSpans,
-  extractDateHighlights,
-  extractKeywords,
-  fleschReadingEase,
-  pickTopSentences,
-  segmentTextIntoSubsections,
-  splitIntoSentences,
-  STOP_WORDS,
-  wordCount,
-} from "@tldr/core";
-import type { HighlightSpan } from "@tldr/core";
+import { segmentTextIntoSubsections } from "@tldr/core";
 
 type ReadingLevel = "simple" | "gcse" | "plain";
 
@@ -72,10 +59,6 @@ const WHOLE_TEXT_OPTIONS: { value: WholeTextMode; label: string; description: st
   },
 ];
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 const KEY_INFO_HEADINGS = ["Important dates", "Things to do", "Things to know"] as const;
 
 function stripJsonFence(value: string): string {
@@ -97,19 +80,23 @@ function parseKeyInfoPayload(rawText: string): KeyInfoPayload | null {
     if (!parsed || typeof parsed !== "object") {
       return null;
     }
-    const sections = (parsed as any).sections;
+    const sections = (parsed as { sections?: unknown }).sections;
     if (!sections || typeof sections !== "object") {
       return null;
     }
     const normalizedSections: Record<string, string[]> = {};
+    const typedSections = sections as Record<string, unknown>;
     KEY_INFO_HEADINGS.forEach((heading) => {
-      const items = Array.isArray((sections as any)[heading]) ? ((sections as any)[heading] as unknown[]) : [];
+      const sectionItems = typedSections[heading];
+      const items = Array.isArray(sectionItems) ? sectionItems : [];
       normalizedSections[heading] = items
         .filter((item): item is string => typeof item === "string")
         .map((item) => item.trim())
         .filter(Boolean);
     });
-    const events = Array.isArray((parsed as any).events) ? ((parsed as any).events as unknown[]) : [];
+    const events = Array.isArray((parsed as { events?: unknown }).events)
+      ? ((parsed as { events?: unknown[] }).events ?? [])
+      : [];
     const normalizedEvents = events
       .filter((event): event is Record<string, unknown> => !!event && typeof event === "object")
       .map((event) => {
@@ -154,8 +141,6 @@ export default function HomePage() {
     error: null,
   });
 
-  const normalizedText = useMemo(() => text.replace(/\s+/g, " ").trim(), [text]);
-
   useEffect(() => {
     if (didInitFromQuery.current) {
       return;
@@ -166,109 +151,6 @@ export default function HomePage() {
     }
     didInitFromQuery.current = true;
   }, []);
-
-  const sentences = useMemo(() => splitIntoSentences(normalizedText), [normalizedText]);
-  const keywords = useMemo(() => extractKeywords(text, 8), [text]);
-  const hardSentences = useMemo(() => detectHardSentences(sentences), [sentences]);
-  const keySentences = useMemo(() => pickTopSentences(sentences, 3), [sentences]);
-  const readability = useMemo(() => fleschReadingEase(text), [text]);
-  const totalWords = useMemo(() => wordCount(text), [text]);
-  const filteredKeywords = useMemo(
-    () => keywords.filter((keyword) => !STOP_WORDS.has(keyword.toLowerCase())),
-    [keywords],
-  );
-  const highlightSpans = useMemo(() => extractKeywordHighlightSpans(normalizedText), [normalizedText]);
-  const dateTerms = useMemo(() => extractDateHighlights(normalizedText, 12), [normalizedText]);
-  const dateSpans = useMemo(() => {
-    if (!dateTerms.length) {
-      return [];
-    }
-    const spans: HighlightSpan[] = [];
-    dateTerms.forEach((term) => {
-      const regex = new RegExp(escapeRegExp(term), "gi");
-      let match: RegExpExecArray | null = regex.exec(normalizedText);
-      while (match) {
-        spans.push({
-          text: match[0],
-          start: match.index,
-          end: match.index + match[0].length,
-        });
-        match = regex.exec(normalizedText);
-      }
-    });
-    return spans;
-  }, [dateTerms, normalizedText]);
-  const highlightBlocks = useMemo(() => {
-    const overlaps = (span: HighlightSpan) =>
-      highlightSpans.some((highlight) => span.start < highlight.end && span.end > highlight.start);
-    const filteredDates = dateSpans.filter((span) => !overlaps(span));
-    const typedHighlights = highlightSpans.map((span) => ({ ...span, kind: "highlight" as const }));
-    const typedDates = filteredDates.map((span) => ({ ...span, kind: "date" as const }));
-    return [...typedHighlights, ...typedDates].sort((a, b) => {
-      if (a.start !== b.start) {
-        return a.start - b.start;
-      }
-      return b.end - b.start - (a.end - a.start);
-    });
-  }, [dateSpans, highlightSpans]);
-
-  const sentenceRanges = useMemo(() => {
-    const ranges: Array<{ sentence: string; start: number; end: number }> = [];
-    let searchStart = 0;
-    sentences.forEach((sentence) => {
-      const index = normalizedText.indexOf(sentence, searchStart);
-      if (index === -1) {
-        return;
-      }
-      ranges.push({ sentence, start: index, end: index + sentence.length });
-      searchStart = index + sentence.length;
-    });
-    return ranges;
-  }, [normalizedText, sentences]);
-
-  const renderSentence = useCallback(
-    (sentence: string, sentenceStart: number) => {
-      const sentenceEnd = sentenceStart + sentence.length;
-      const spans = highlightBlocks.filter((span) => span.start < sentenceEnd && span.end > sentenceStart);
-      if (!spans.length) {
-        return sentence;
-      }
-      const sorted = [...spans].sort((a, b) => {
-        if (a.start !== b.start) {
-          return a.start - b.start;
-        }
-        return b.end - b.start - (a.end - a.start);
-      });
-      const parts: React.ReactNode[] = [];
-      let cursor = sentenceStart;
-      sorted.forEach((span, index) => {
-        const start = Math.max(span.start, sentenceStart);
-        const end = Math.min(span.end, sentenceEnd);
-        if (start > cursor) {
-          parts.push(normalizedText.slice(cursor, start));
-        }
-        const spanText = normalizedText.slice(start, end);
-          parts.push(
-            <span
-              key={`${sentenceStart}-${index}-${span.kind}`}
-              className={
-                span.kind === "date"
-                  ? "rounded-md bg-secondary/15 px-1 text-secondary ring-1 ring-secondary/30"
-                  : "rounded-md bg-muted/80 px-1 text-foreground ring-1 ring-border/80"
-              }
-            >
-              {spanText}
-            </span>,
-          );
-        cursor = end;
-      });
-      if (cursor < sentenceEnd) {
-        parts.push(normalizedText.slice(cursor, sentenceEnd));
-      }
-      return parts;
-    },
-    [highlightBlocks, normalizedText],
-  );
 
   const keyInfoPayload = useMemo(() => parseKeyInfoPayload(wholeTextResult), [wholeTextResult]);
 

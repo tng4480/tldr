@@ -58,7 +58,6 @@ export async function simplifyWithLlm(
 ): Promise<LlmResult> {
   const model = process.env.ANTHROPIC_MODEL;
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const baseUrl = process.env.LLM_BASE_URL ?? "https://api.anthropic.com/v1";
 
   if (!apiKey || !model) {
     throw new Error("LLM configuration is missing.");

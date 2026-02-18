@@ -12,6 +12,7 @@ import type {
   HighlightClicked,
   AuthClearRequest,
   AuthConnectRequest,
+  AuthSetTokenRequest,
   AuthStatusRequest,
   AuthStatusResult,
   LlmActionRequest,
@@ -20,6 +21,7 @@ import type {
   StartRsvpFromText,
 } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
+import { getApiBase } from "../shared/config";
 import { error, log, runtimeLastError, warn } from "../shared/logger";
 
 type StoredExtensionToken = {
@@ -40,10 +42,6 @@ const pendingByTab = new Map<
     cursor?: ApplyRsvpCursorRequest | ClearRsvpCursorRequest;
   }
 >();
-
-function getApiBase(): string {
-  return import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
-}
 
 async function getStoredToken(): Promise<StoredExtensionToken | null> {
   return await new Promise((resolve) => {
@@ -85,8 +83,8 @@ function isTokenExpired(expiresAt: string): boolean {
 }
 
 async function fetchNewToken(): Promise<StoredExtensionToken | null> {
-  const apiBase = getApiBase();
   try {
+    const apiBase = getApiBase();
     const response = await fetch(`${apiBase}/api/extension/token`, {
       method: "POST",
       credentials: "include",
@@ -102,6 +100,51 @@ async function fetchNewToken(): Promise<StoredExtensionToken | null> {
     return { token: data.token, expiresAt: data.expiresAt };
   } catch {
     return null;
+  }
+}
+
+type ManualTokenVerification =
+  | { ok: true; token: StoredExtensionToken }
+  | { ok: false; error: string };
+
+async function verifyManualToken(rawToken: string): Promise<ManualTokenVerification> {
+  try {
+    const apiBase = getApiBase();
+    const response = await fetch(`${apiBase}/api/extension/token/verify`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${rawToken}`,
+      },
+    });
+    const data = (await response.json().catch(() => ({}))) as {
+      expiresAt?: unknown;
+      error?: unknown;
+    };
+
+    if (!response.ok) {
+      const message =
+        typeof data.error === "string"
+          ? data.error
+          : "Token verification failed.";
+      return { ok: false, error: message };
+    }
+
+    if (typeof data.expiresAt !== "string" || !data.expiresAt) {
+      return { ok: false, error: "Token verification returned invalid expiry." };
+    }
+
+    return {
+      ok: true,
+      token: {
+        token: rawToken,
+        expiresAt: data.expiresAt,
+      },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Token verification failed.",
+    };
   }
 }
 
@@ -169,11 +212,6 @@ async function callLlm(request: LlmActionRequest): Promise<LlmActionResult> {
     };
   }
 
-  const apiBase = getApiBase();
-  const url =
-    request.action === "key_info"
-      ? `${apiBase}/api/whole-text`
-      : `${apiBase}/api/simplify`;
   const body =
     request.action === "key_info"
       ? { text: request.text, mode: "key_info" }
@@ -182,6 +220,11 @@ async function callLlm(request: LlmActionRequest): Promise<LlmActionResult> {
         : { text: request.text, readingLevel: "plain", tone: "descriptive" };
 
   try {
+    const apiBase = getApiBase();
+    const url =
+      request.action === "key_info"
+        ? `${apiBase}/api/whole-text`
+        : `${apiBase}/api/simplify`;
     log("bg", "LLM request start", { tabId: request.tabId, action: request.action, url, bytes: request.text.length });
     const response = await fetch(url, {
       method: "POST",
@@ -479,6 +522,54 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
           isAuthenticated: Boolean(token),
           expiresAt: token?.expiresAt ?? null,
           error: token ? undefined : "Not signed in.",
+        } satisfies AuthStatusResult);
+      })
+      .catch((e) => {
+        sendResponse({
+          type: "AuthStatusResult",
+          requestId: request.requestId,
+          isAuthenticated: false,
+          expiresAt: null,
+          error: e instanceof Error ? e.message : "Unknown error",
+        } satisfies AuthStatusResult);
+      });
+    return true;
+  }
+
+  if (typed.type === "AuthSetTokenRequest") {
+    const request = message as AuthSetTokenRequest;
+    const rawToken = request.token.trim();
+
+    if (!rawToken) {
+      sendResponse({
+        type: "AuthStatusResult",
+        requestId: request.requestId,
+        isAuthenticated: false,
+        expiresAt: null,
+        error: "Paste a token first.",
+      } satisfies AuthStatusResult);
+      return true;
+    }
+
+    verifyManualToken(rawToken)
+      .then(async (result) => {
+        if (!result.ok) {
+          sendResponse({
+            type: "AuthStatusResult",
+            requestId: request.requestId,
+            isAuthenticated: false,
+            expiresAt: null,
+            error: result.error,
+          } satisfies AuthStatusResult);
+          return;
+        }
+
+        await setStoredToken(result.token);
+        sendResponse({
+          type: "AuthStatusResult",
+          requestId: request.requestId,
+          isAuthenticated: true,
+          expiresAt: result.token.expiresAt,
         } satisfies AuthStatusResult);
       })
       .catch((e) => {

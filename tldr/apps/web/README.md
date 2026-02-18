@@ -1,6 +1,6 @@
 # tldr
 
-tldr is a website-first reading simplifier that offers instant, client-side analysis and optional AI-powered simplification per paragraph. It is designed to support a future browser extension.
+tldr is a reading simplifier with a web app and browser extension. It offers instant, client-side analysis and optional AI-powered simplification per paragraph.
 
 ## Features
 
@@ -8,8 +8,8 @@ tldr is a website-first reading simplifier that offers instant, client-side anal
 - Opt-in AI simplification per paragraph (no streaming responses).
 - Auth.js OAuth login with Google and GitHub.
 - Supabase Postgres persistence for profiles, usage, and cached simplifications.
-- Stripe subscriptions with Free, Starter, and Pro tiers plus a 14-day free trial.
-- Extension token minting endpoint ready for browser extension integration.
+- Stripe subscriptions with Free and Starter tiers plus a 14-day free trial.
+- Extension token minting, verification, and revoke endpoints for browser extension access.
 
 ## PowerShell setup (Windows)
 
@@ -53,3 +53,8 @@ Open `http://localhost:3000` in your browser.
 ## Environment variables
 
 See `.env.example` for the full list of required environment variables.
+
+## Ops scripts
+
+- `npm run test:routes:smoke` runs basic simplify/whole-text API smoke checks against a deployed base URL.
+- `npm run stripe:webhook:replay -- --baseUrl https://your-domain.com --eventFile ./event.json --signature <sig>` replays a Stripe webhook payload.

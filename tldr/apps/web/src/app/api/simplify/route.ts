@@ -36,16 +36,6 @@ export async function POST(request: Request) {
 
   const contentHash = await computeStableHash(`${text}:${readingLevel}:${tone}`);
 
-  const { data: cached } = await supabaseAdmin
-    .from("cached_simplifications")
-    .select("simplified_text")
-    .eq("content_hash", contentHash)
-    .maybeSingle();
-
-  if (cached?.simplified_text) {
-    return NextResponse.json({ simplifiedText: cached.simplified_text, cached: true });
-  }
-
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("user_profiles")
     .select("plan, subscription_status, trial_active, trial_ends_at, monthly_usage, monthly_usage_period")
@@ -79,14 +69,43 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Monthly limit reached." }, { status: 402 });
   }
 
+  const { data: cached } = await supabaseAdmin
+    .from("cached_simplifications")
+    .select("simplified_text, model")
+    .eq("content_hash", contentHash)
+    .maybeSingle();
+
+  if (cached?.simplified_text) {
+    await supabaseAdmin.from("usage_events").insert({
+      user_id: userId,
+      event_type: "simplify",
+      model: cached.model ?? null,
+      input_tokens: null,
+      output_tokens: null,
+      total_tokens: null,
+    });
+
+    await supabaseAdmin
+      .from("user_profiles")
+      .update({ monthly_usage: monthlyUsage + 1, monthly_usage_period: entitlements.usagePeriod })
+      .eq("id", userId);
+
+    return NextResponse.json({ simplifiedText: cached.simplified_text, cached: true, charged: true });
+  }
+
   const llmResult = await simplifyWithLlm(text, readingLevel, tone);
 
-  await supabaseAdmin.from("cached_simplifications").insert({
-    content_hash: contentHash,
-    reading_level: readingLevel,
-    simplified_text: llmResult.simplifiedText,
-    model: llmResult.model ?? null,
-  });
+  await supabaseAdmin
+    .from("cached_simplifications")
+    .upsert(
+      {
+        content_hash: contentHash,
+        reading_level: readingLevel,
+        simplified_text: llmResult.simplifiedText,
+        model: llmResult.model ?? null,
+      },
+      { onConflict: "content_hash", ignoreDuplicates: true },
+    );
 
   await supabaseAdmin.from("usage_events").insert({
     user_id: userId,
@@ -102,5 +121,5 @@ export async function POST(request: Request) {
     .update({ monthly_usage: monthlyUsage + 1, monthly_usage_period: entitlements.usagePeriod })
     .eq("id", userId);
 
-  return NextResponse.json({ simplifiedText: llmResult.simplifiedText, cached: false });
+  return NextResponse.json({ simplifiedText: llmResult.simplifiedText, cached: false, charged: true });
 }

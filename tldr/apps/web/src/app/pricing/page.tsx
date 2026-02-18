@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import SiteHeader from "@/components/SiteHeader";
 import { Badge } from "@/components/ui/badge";
@@ -21,13 +21,6 @@ const tiers = [
     features: ["200 AI simplifications per month", "Priority processing", "Access to trial features"],
     tier: "starter" as const,
   },
-  // {
-  //   name: "Pro",
-  //   price: "£19",
-  //   description: "For heavy reading workloads and content teams.",
-  //   features: ["1,000 AI simplifications per month", "Fastest responses", "Team-friendly usage"],
-  //   tier: "pro" as const,
-  // },
 ];
 
 export default function PricingPage() {
@@ -40,12 +33,12 @@ export default function PricingPage() {
     if (response.ok) {
       const data = await response.json();
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
       }
     }
   }
 
-  async function handleSubscribe(tier: "starter" | "pro") {
+  async function handleSubscribe(tier: "starter") {
     const response = await fetch("/api/stripe/checkout", {
       method: "POST",
       headers: {
@@ -57,7 +50,7 @@ export default function PricingPage() {
     if (response.ok) {
       const data = await response.json();
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
       }
     }
   }
@@ -70,9 +63,7 @@ export default function PricingPage() {
           <Badge variant="secondary" className="text-sm">
             14-day trial included
           </Badge>
-          <h1 className="text-3xl font-semibold text-foreground">
-            Pricing that keeps reading simple.
-          </h1>
+          <h1 className="text-3xl font-semibold text-foreground">Pricing that keeps reading simple.</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
             Choose a plan for AI-powered simplification. Local analysis is always included.
           </p>
@@ -110,11 +101,7 @@ export default function PricingPage() {
                     Included
                   </Button>
                 ) : (
-                  <Button
-                    className="w-full"
-                    onClick={() => handleSubscribe(tier.tier)}
-                    disabled={!session?.user}
-                  >
+                  <Button className="w-full" onClick={() => handleSubscribe(tier.tier)} disabled={!session?.user}>
                     {session?.user ? "Start subscription" : "Sign in to subscribe"}
                   </Button>
                 )}

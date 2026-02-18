@@ -1,4 +1,5 @@
 import type { HighlightRect } from "./types";
+import type { PdfLibPage } from "./runtime";
 import { loadPdfLibRuntime } from "./runtime";
 
 function groupByPage(rects: HighlightRect[]): Map<number, HighlightRect[]> {
@@ -15,9 +16,9 @@ export async function exportHighlightedPdf(originalBytes: Uint8Array, rects: Hig
   const { PDFDocument, rgb } = await loadPdfLibRuntime();
   const pdfDoc = await PDFDocument.load(originalBytes);
   const pageMap = groupByPage(rects);
-  const pages: any[] = pdfDoc.getPages();
+  const pages: PdfLibPage[] = pdfDoc.getPages();
 
-  pages.forEach((page: any, pageIndex: number) => {
+  pages.forEach((page, pageIndex) => {
     const pageRects = pageMap.get(pageIndex) ?? [];
     if (!pageRects.length) {
       return;

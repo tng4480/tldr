@@ -1,0 +1,46 @@
+name: TLDR CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tldr
+    env:
+      VITE_API_BASE_URL: https://example.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: tldr/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint Web
+        run: npm run lint:web
+
+      - name: Lint Extension
+        run: npm -w apps/extension run lint
+
+      - name: Build Web
+        run: npm run build:web
+
+      - name: Build Core
+        run: npm run build:core
+
+      - name: Build Core DOM
+        run: npm run build:core-dom
+
+      - name: Build Extension
+        run: npm run build:extension
