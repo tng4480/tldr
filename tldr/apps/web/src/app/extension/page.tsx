@@ -56,7 +56,7 @@ export default function ExtensionPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
         <div className="space-y-6">
