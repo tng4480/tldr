@@ -6,6 +6,7 @@ import { computeStableHash } from "@tldr/core";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateEntitlements } from "@/lib/entitlements";
 import { normalizePlan } from "@/lib/billing";
+import { syncUserPlanState } from "@/lib/syncUserPlanState";
 import { buildGoogleCalendarTemplateUrl } from "@/lib/googleCalendar";
 import { extractKeyInfoWithLlm, WholeTextMode } from "@/lib/llm";
 
@@ -175,15 +176,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from("user_profiles")
-    .select("plan, subscription_status, trial_active, trial_ends_at, monthly_usage, monthly_usage_period")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    return NextResponse.json({ error: "Profile missing." }, { status: 400 });
+  const syncResult = await syncUserPlanState(userId);
+  if (!syncResult.ok) {
+    return NextResponse.json({ error: syncResult.error }, { status: 400 });
   }
+  const profile = syncResult.profile;
 
   const entitlements = evaluateEntitlements({
     plan: normalizePlan(profile.plan),

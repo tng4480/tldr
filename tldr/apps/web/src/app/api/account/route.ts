@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { evaluateEntitlements } from "@/lib/entitlements";
 import { isPaidPlan, normalizePlan, planLabel } from "@/lib/billing";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { syncUserPlanState } from "@/lib/syncUserPlanState";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,11 @@ export async function GET() {
 
   if (!userId) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+  }
+
+  const syncResult = await syncUserPlanState(userId);
+  if (!syncResult.ok) {
+    return NextResponse.json({ error: syncResult.error }, { status: 400 });
   }
 
   const { data: profile, error } = await supabaseAdmin

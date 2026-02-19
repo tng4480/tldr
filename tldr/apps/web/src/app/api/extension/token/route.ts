@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { syncUserPlanState } from "@/lib/syncUserPlanState";
 import { createHash, randomBytes } from "crypto";
 
 export const runtime = "nodejs";
@@ -12,6 +13,11 @@ export async function POST() {
 
   if (!userId) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+  }
+
+  const syncResult = await syncUserPlanState(userId);
+  if (!syncResult.ok) {
+    return NextResponse.json({ error: syncResult.error }, { status: 400 });
   }
 
   const rawToken = randomBytes(32).toString("base64url");
