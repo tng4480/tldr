@@ -16,6 +16,7 @@ import { buildHighlightSpans, buildHighlightTerms } from "@/lib/highlight/spans"
 import { mapSpansToHighlightRects } from "@/lib/pdf/boldMap";
 import { ocrProvider } from "@/lib/pdf/ocr";
 import { exportHighlightedPdf } from "@/lib/pdf/exportPseudoBold";
+import { isPaidPlan } from "@/lib/billing";
 
 // PAYWALL
 const READ_FILES_REQUIRES_PAID_PLAN = true;
@@ -243,13 +244,12 @@ export default function ReadPdfPage() {
           throw new Error("Unable to load account.");
         }
         const data = (await response.json()) as {
-          profile?: { plan?: string; subscription_status?: string };
+          profile?: { plan?: number };
         };
-        const plan = data.profile?.plan ?? "free";
-        const status = data.profile?.subscription_status ?? "none";
-        const isPaidPlan = plan !== "free" && (status === "active" || status === "trialing");
+        const plan = data.profile?.plan ?? 0;
+        const hasPaidPlan = isPaidPlan(plan);
         if (active) {
-          setAccessState(isPaidPlan ? "allowed" : "blocked");
+          setAccessState(hasPaidPlan ? "allowed" : "blocked");
         }
       } catch {
         if (active) {

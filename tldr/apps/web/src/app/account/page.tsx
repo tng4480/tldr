@@ -6,11 +6,14 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { planLabel } from "@/lib/billing";
 import { useSession } from "next-auth/react";
 
 type ProfileData = {
   email: string | null;
-  plan: string;
+  plan: number;
+  plan_label?: "free" | "starter";
+  is_paid?: boolean;
   subscription_status: string;
   trial_active: boolean;
   trial_ends_at: string | null;
@@ -177,7 +180,7 @@ export default function AccountPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">Plan: {profile.plan}</Badge>
+                    <Badge variant="secondary">Plan: {profile.plan_label ?? planLabel(profile.plan)}</Badge>
                     <Badge variant="secondary">Status: {profile.subscription_status}</Badge>
                     {profile.cancel_at_period_end ? <Badge variant="warning">Cancels at period end</Badge> : null}
                   </div>

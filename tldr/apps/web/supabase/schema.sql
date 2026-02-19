@@ -48,7 +48,7 @@ create table if not exists next_auth.verification_tokens (
 create table if not exists public.user_profiles (
   id uuid primary key references next_auth.users(id) on delete cascade,
   email text,
-  plan text not null default 'free',
+  plan int2 not null default 0 check (plan in (0, 1)),
   monthly_usage integer not null default 0,
   monthly_limit integer not null default 20,
   monthly_usage_period text not null default '',

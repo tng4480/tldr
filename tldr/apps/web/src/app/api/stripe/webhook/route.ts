@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { getPlanLimit, mapPriceIdToPlan } from "@/lib/billing";
+import { getPlanLimit, mapPriceIdToPlan, PLAN_FREE } from "@/lib/billing";
 
 export const runtime = "nodejs";
 
@@ -13,7 +13,9 @@ async function updateSubscriptionProfile(subscription: Stripe.Subscription) {
   const currentPeriodEnd = (subscription as Stripe.Subscription & { current_period_end?: number | null })
     .current_period_end;
   const priceId = subscription.items.data[0]?.price?.id ?? null;
-  const plan = mapPriceIdToPlan(priceId);
+  const mappedPlan = mapPriceIdToPlan(priceId);
+  const isBillableStatus = subscription.status === "active" || subscription.status === "trialing";
+  const plan = isBillableStatus ? mappedPlan : PLAN_FREE;
 
   await supabaseAdmin
     .from("user_profiles")

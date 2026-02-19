@@ -1,4 +1,12 @@
-import { computeUsagePeriod, getPlanLimit, getTrialLimit, PlanTier } from "@/lib/billing";
+import {
+  computeUsagePeriod,
+  getPlanLimit,
+  getTrialLimit,
+  normalizePlan,
+  PlanTier,
+  PLAN_FREE,
+  PLAN_STARTER,
+} from "@/lib/billing";
 
 export type UserProfileEntitlements = {
   plan: PlanTier;
@@ -19,13 +27,13 @@ export type EntitlementDecision = {
 
 export function evaluateEntitlements(profile: UserProfileEntitlements, now = new Date()): EntitlementDecision {
   const usagePeriod = computeUsagePeriod(now);
-  const subscriptionStatus = profile.subscription_status ?? "none";
+  const plan = normalizePlan(profile.plan);
   const trialEndsAt = profile.trial_ends_at ? new Date(profile.trial_ends_at) : null;
   const isTrialValid = Boolean(profile.trial_active) && trialEndsAt ? now < trialEndsAt : false;
 
-  if (subscriptionStatus === "active" || subscriptionStatus === "trialing") {
+  if (plan === PLAN_STARTER) {
     return {
-      monthlyLimit: getPlanLimit(profile.plan),
+      monthlyLimit: getPlanLimit(PLAN_STARTER),
       isActive: true,
       usagePeriod,
       usageWindow: "monthly",
@@ -44,7 +52,7 @@ export function evaluateEntitlements(profile: UserProfileEntitlements, now = new
   }
 
   return {
-    monthlyLimit: getPlanLimit("free"),
+    monthlyLimit: getPlanLimit(PLAN_FREE),
     isActive: false,
     usagePeriod: "lifetime",
     usageWindow: "lifetime",

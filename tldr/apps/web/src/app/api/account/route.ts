@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { evaluateEntitlements } from "@/lib/entitlements";
+import { isPaidPlan, normalizePlan, planLabel } from "@/lib/billing";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -27,7 +28,7 @@ export async function GET() {
   }
 
   const entitlements = evaluateEntitlements({
-    plan: profile.plan,
+    plan: normalizePlan(profile.plan),
     subscription_status: profile.subscription_status,
     trial_active: profile.trial_active,
     trial_ends_at: profile.trial_ends_at,
@@ -38,6 +39,9 @@ export async function GET() {
   return NextResponse.json({
     profile: {
       ...profile,
+      plan: normalizePlan(profile.plan),
+      plan_label: planLabel(profile.plan),
+      is_paid: isPaidPlan(profile.plan),
       monthly_limit: entitlements.monthlyLimit,
       usage_window: entitlements.usageWindow,
     },

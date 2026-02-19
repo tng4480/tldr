@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { stripe } from "@/lib/stripe";
-import { computeUsagePeriod, getTrialLimit, TRIAL_DAYS } from "@/lib/billing";
+import { computeUsagePeriod, getTrialLimit, PLAN_FREE, TRIAL_DAYS } from "@/lib/billing";
 
 export async function ensureUserProfile(user: { id: string; email?: string | null; name?: string | null }) {
   const { data: existing, error } = await supabaseAdmin
@@ -29,6 +29,7 @@ export async function ensureUserProfile(user: { id: string; email?: string | nul
   const { error: insertError } = await supabaseAdmin.from("user_profiles").insert({
     id: user.id,
     email: user.email ?? null,
+    plan: PLAN_FREE,
     stripe_customer_id: customer.id,
     trial_active: true,
     trial_ends_at: trialEndsAt,

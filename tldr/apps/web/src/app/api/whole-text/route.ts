@@ -5,6 +5,7 @@ import { authenticateExtensionToken } from "@/lib/extensionAuth";
 import { computeStableHash } from "@tldr/core";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateEntitlements } from "@/lib/entitlements";
+import { normalizePlan } from "@/lib/billing";
 import { buildGoogleCalendarTemplateUrl } from "@/lib/googleCalendar";
 import { extractKeyInfoWithLlm, WholeTextMode } from "@/lib/llm";
 
@@ -185,7 +186,7 @@ export async function POST(request: Request) {
   }
 
   const entitlements = evaluateEntitlements({
-    plan: profile.plan,
+    plan: normalizePlan(profile.plan),
     subscription_status: profile.subscription_status,
     trial_active: profile.trial_active,
     trial_ends_at: profile.trial_ends_at,

@@ -1,9 +1,11 @@
-export type PlanTier = "free" | "starter" | "pro";
+export const PLAN_FREE = 0 as const;
+export const PLAN_STARTER = 1 as const;
+
+export type PlanTier = typeof PLAN_FREE | typeof PLAN_STARTER;
 
 export const PLAN_LIMITS: Record<PlanTier, number> = {
-  free: 20,
-  starter: 100,
-  pro: 1000,
+  [PLAN_FREE]: 20,
+  [PLAN_STARTER]: 100,
 };
 
 export const TRIAL_DAYS = 14;
@@ -18,18 +20,30 @@ export function getPlanLimit(plan: PlanTier): number {
 }
 
 export function getTrialLimit(): number {
-  return PLAN_LIMITS.starter;
+  return PLAN_LIMITS[PLAN_STARTER];
 }
 
 export function mapPriceIdToPlan(priceId?: string | null): PlanTier {
   if (!priceId) {
-    return "free";
-  }
-  if (priceId === process.env.STRIPE_PRO_PRICE_ID) {
-    return "pro";
+    return PLAN_FREE;
   }
   if (priceId === process.env.STRIPE_STARTER_PRICE_ID) {
-    return "starter";
+    return PLAN_STARTER;
   }
-  return "free";
+  return PLAN_FREE;
+}
+
+export function normalizePlan(plan: unknown): PlanTier {
+  if (plan === PLAN_STARTER || plan === 1 || plan === "starter" || plan === "pro") {
+    return PLAN_STARTER;
+  }
+  return PLAN_FREE;
+}
+
+export function isPaidPlan(plan: unknown): boolean {
+  return normalizePlan(plan) === PLAN_STARTER;
+}
+
+export function planLabel(plan: unknown): "free" | "starter" {
+  return isPaidPlan(plan) ? "starter" : "free";
 }
