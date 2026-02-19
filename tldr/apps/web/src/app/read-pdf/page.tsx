@@ -2,6 +2,7 @@
 
 import { type ChangeEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { splitIntoSentences } from "@tldr/core";
+import { useSession } from "next-auth/react";
 import SiteHeader from "@/components/SiteHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,9 @@ import { buildHighlightSpans, buildHighlightTerms } from "@/lib/highlight/spans"
 import { mapSpansToHighlightRects } from "@/lib/pdf/boldMap";
 import { ocrProvider } from "@/lib/pdf/ocr";
 import { exportHighlightedPdf } from "@/lib/pdf/exportPseudoBold";
+
+// PAYWALL
+const READ_FILES_REQUIRES_PAID_PLAN = true;
 
 type RsvpToken = {
   word: string;
@@ -119,6 +123,7 @@ function saveBytesAsFile(bytes: Uint8Array, fileName: string, mimeType: string) 
 }
 
 export default function ReadPdfPage() {
+  const { data: session, status: sessionStatus } = useSession();
   const [mode, setMode] = useState<RenderMode>("preserve_layout");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [parsedDocument, setParsedDocument] = useState<ParsedDocument | null>(null);
@@ -133,6 +138,9 @@ export default function ReadPdfPage() {
     isLoading: false,
     error: null,
   });
+  const [accessState, setAccessState] = useState<"checking" | "allowed" | "blocked">(
+    READ_FILES_REQUIRES_PAID_PLAN ? "checking" : "allowed",
+  );
 
   const docxContainerRef = useRef<HTMLDivElement | null>(null);
   const fullText = parsedDocument?.fullText ?? "";
@@ -210,6 +218,51 @@ export default function ReadPdfPage() {
     },
     [parseAndSet, selectedFile],
   );
+
+  useEffect(() => {
+    if (!READ_FILES_REQUIRES_PAID_PLAN) {
+      setAccessState("allowed");
+      return;
+    }
+
+    if (sessionStatus === "loading") {
+      setAccessState("checking");
+      return;
+    }
+
+    if (!session?.user) {
+      setAccessState("blocked");
+      return;
+    }
+
+    let active = true;
+    const loadAccess = async () => {
+      try {
+        const response = await fetch("/api/account");
+        if (!response.ok) {
+          throw new Error("Unable to load account.");
+        }
+        const data = (await response.json()) as {
+          profile?: { plan?: string; subscription_status?: string };
+        };
+        const plan = data.profile?.plan ?? "free";
+        const status = data.profile?.subscription_status ?? "none";
+        const isPaidPlan = plan !== "free" && (status === "active" || status === "trialing");
+        if (active) {
+          setAccessState(isPaidPlan ? "allowed" : "blocked");
+        }
+      } catch {
+        if (active) {
+          setAccessState("blocked");
+        }
+      }
+    };
+
+    void loadAccess();
+    return () => {
+      active = false;
+    };
+  }, [session?.user, sessionStatus]);
 
   useEffect(() => {
     setRsvpIndex(0);
@@ -290,6 +343,7 @@ export default function ReadPdfPage() {
   const canDownloadPreservePdf = Boolean(parsedDocument && parsedDocument.fileType === "pdf" && mode === "preserve_layout");
   const canUseExtractMode = !parsedDocument || parsedDocument.fileType === "pdf";
   const showModeControls = parsedDocument?.fileType === "pdf";
+  const isAccessBlocked = READ_FILES_REQUIRES_PAID_PLAN && accessState !== "allowed";
 
   const renderedExtractText = useMemo((): ReactNode => {
     if (!extractViewText) {
@@ -338,6 +392,33 @@ export default function ReadPdfPage() {
   const handleRsvpSentenceForward = useCallback(() => {
     moveRsvpBySentence(1);
   }, [moveRsvpBySentence]);
+
+  if (isAccessBlocked) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <SiteHeader />
+        <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 sm:px-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl">Read Files</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {accessState === "checking" ? (
+                <p className="text-sm text-muted-foreground">Checking plan access...</p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-amber-700">
+                    Read Files is available on paid plans only. Upgrade to Starter to continue.
+                  </p>
+                  <Button onClick={() => window.location.assign("/pricing")}>View pricing</Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
