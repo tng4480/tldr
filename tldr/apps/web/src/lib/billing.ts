@@ -2,7 +2,7 @@ export type PlanTier = "free" | "starter" | "pro";
 
 export const PLAN_LIMITS: Record<PlanTier, number> = {
   free: 20,
-  starter: 200,
+  starter: 100,
   pro: 1000,
 };
 

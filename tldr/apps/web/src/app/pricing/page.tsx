@@ -10,15 +10,15 @@ const tiers = [
   {
     name: "Free",
     price: "£0",
-    description: "Client-side analysis with a small monthly simplification allowance.",
-    features: ["20 AI simplifications", "Local readability insights", "Browser extension-ready"],
+    description: "Client-side analysis with a one-time simplification allowance.",
+    features: ["20 AI simplifications lifetime", "Local readability insights", "Browser extension-ready"],
     tier: "free" as const,
   },
   {
     name: "Starter",
-    price: "£9",
+    price: "£5",
     description: "For students and busy teams who need steady help.",
-    features: ["200 AI simplifications per month", "Priority processing", "Access to trial features"],
+    features: ["100 AI simplifications per month", "Priority processing", "Access to trial features"],
     tier: "starter" as const,
   },
 ];
@@ -60,9 +60,9 @@ export default function PricingPage() {
       <SiteHeader />
       <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
         <div className="flex flex-col items-center gap-6 text-center">
-          <Badge variant="secondary" className="text-sm">
+          {/* <Badge variant="secondary" className="text-sm">
             14-day trial included
-          </Badge>
+          </Badge> */}
           <h1 className="text-3xl font-semibold text-foreground">Pricing that keeps reading simple.</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
             Choose a plan for AI-powered simplification. Local analysis is always included.
@@ -83,7 +83,9 @@ export default function PricingPage() {
                 </div>
                 <div className="text-3xl font-semibold text-foreground">
                   {tier.price}
-                  <span className="text-sm font-normal text-muted-foreground">/month</span>
+                  {tier.tier === "free" ? null : (
+                    <span className="text-sm font-normal text-muted-foreground">/month</span>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground">{tier.description}</p>
               </CardHeader>

@@ -57,7 +57,7 @@ export async function POST(request: Request) {
 
   let monthlyUsage = profile.monthly_usage ?? 0;
 
-  if (profile.monthly_usage_period !== entitlements.usagePeriod) {
+  if (entitlements.resetsMonthly && profile.monthly_usage_period !== entitlements.usagePeriod) {
     monthlyUsage = 0;
     await supabaseAdmin
       .from("user_profiles")
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
   }
 
   if (monthlyUsage >= entitlements.monthlyLimit) {
-    return NextResponse.json({ error: "Monthly limit reached." }, { status: 402 });
+    return NextResponse.json({ error: "Usage limit reached." }, { status: 402 });
   }
 
   const { data: cached } = await supabaseAdmin

@@ -39,6 +39,7 @@ export async function GET() {
     profile: {
       ...profile,
       monthly_limit: entitlements.monthlyLimit,
+      usage_window: entitlements.usageWindow,
     },
   });
 }

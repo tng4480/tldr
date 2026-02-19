@@ -17,6 +17,7 @@ type ProfileData = {
   monthly_usage: number;
   monthly_limit: number;
   monthly_usage_period: string;
+  usage_window?: "lifetime" | "monthly";
   current_period_end: string | null;
   cancel_at_period_end: boolean;
   extensionToken?: string;
@@ -182,9 +183,11 @@ export default function AccountPage() {
                   </div>
                   <ul className="space-y-2 text-xs text-muted-foreground">
                     <li>Email: {profile.email ?? "Unknown"}</li>
-                    <li>Monthly usage: {profile.monthly_usage}</li>
-                    <li>Monthly limit: {profile.monthly_limit}</li>
-                    <li>Usage period: {profile.monthly_usage_period || "Not set"}</li>
+                    <li>
+                      Usage: {profile.monthly_usage} / {profile.monthly_limit}{" "}
+                      {profile.usage_window === "lifetime" ? "lifetime" : "this month"}
+                    </li>
+                    <li>Usage period: {profile.usage_window === "lifetime" ? "Lifetime" : profile.monthly_usage_period || "Not set"}</li>
                     <li>Trial active: {profile.trial_active ? "Yes" : "No"}</li>
                     <li>
                       Trial ends:{" "}

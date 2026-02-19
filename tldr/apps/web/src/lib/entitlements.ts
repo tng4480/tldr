@@ -13,6 +13,8 @@ export type EntitlementDecision = {
   monthlyLimit: number;
   isActive: boolean;
   usagePeriod: string;
+  usageWindow: "lifetime" | "monthly";
+  resetsMonthly: boolean;
 };
 
 export function evaluateEntitlements(profile: UserProfileEntitlements, now = new Date()): EntitlementDecision {
@@ -26,6 +28,8 @@ export function evaluateEntitlements(profile: UserProfileEntitlements, now = new
       monthlyLimit: getPlanLimit(profile.plan),
       isActive: true,
       usagePeriod,
+      usageWindow: "monthly",
+      resetsMonthly: true,
     };
   }
 
@@ -34,12 +38,16 @@ export function evaluateEntitlements(profile: UserProfileEntitlements, now = new
       monthlyLimit: getTrialLimit(),
       isActive: true,
       usagePeriod,
+      usageWindow: "monthly",
+      resetsMonthly: true,
     };
   }
 
   return {
     monthlyLimit: getPlanLimit("free"),
     isActive: false,
-    usagePeriod,
+    usagePeriod: "lifetime",
+    usageWindow: "lifetime",
+    resetsMonthly: false,
   };
 }
