@@ -318,6 +318,7 @@ function App() {
       "--assist-ext-text": theme.text,
       "--assist-ext-muted": theme.muted,
       "--assist-ext-accent": theme.accent,
+      "--assist-ext-rsvp-anchor": theme.anchor,
       "--assist-ext-danger": theme.danger,
     } as React.CSSProperties;
   }, [themeBaseColor]);
