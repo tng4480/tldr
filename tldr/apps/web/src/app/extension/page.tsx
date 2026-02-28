@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LATEST_EXTENSION_VERSION, LATEST_EXTENSION_ZIP_URL } from "@/lib/extensionRelease";
 
 type MintedToken = {
   token: string;
@@ -86,6 +87,21 @@ export default function ExtensionPage() {
               Mint an extension token and follow these steps to use bubble highlights, sidepanel highlights, and RSVP.
             </p>
           </div>
+
+          <Card>
+            <CardHeader className="space-y-3">
+              <CardTitle>Download latest extension</CardTitle>
+              <p className="text-sm text-muted-foreground">Current version: v{LATEST_EXTENSION_VERSION}</p>
+            </CardHeader>
+            <CardContent className="flex flex-wrap items-center gap-3">
+              <Button asChild>
+                <a href={LATEST_EXTENSION_ZIP_URL}>Download .zip</a>
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Upload your newest extension zip and update <span className="font-mono">src/lib/extensionRelease.ts</span>.
+              </p>
+            </CardContent>
+          </Card>
 
           {status === "loading" ? (
             <div className="flex items-center gap-3 text-xs text-muted-foreground">

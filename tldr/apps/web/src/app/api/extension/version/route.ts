@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
+import { LATEST_EXTENSION_VERSION, LATEST_EXTENSION_ZIP_URL } from "@/lib/extensionRelease";
 
 export const runtime = "nodejs";
 
-// Update this when you publish a new extension build.
-const CURRENT_EXTENSION_VERSION = "0.1.0";
-
 export async function GET() {
   return NextResponse.json(
-    { version: CURRENT_EXTENSION_VERSION },
+    {
+      version: LATEST_EXTENSION_VERSION,
+      zipUrl: LATEST_EXTENSION_ZIP_URL,
+    },
     {
       headers: {
         "Cache-Control": "no-store",
