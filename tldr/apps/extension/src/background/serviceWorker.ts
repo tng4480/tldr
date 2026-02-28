@@ -6,7 +6,6 @@ import type {
   ApplyRsvpCursorRequest,
   ClearRsvpCursorRequest,
   ContentConnect,
-  ContentReady,
   ExtractRequest,
   ExtractResult,
   HighlightClicked,
@@ -29,6 +28,12 @@ type StoredExtensionToken = {
   expiresAt: string;
 };
 
+const EXTENSION_UPDATE_NOTICE_KEY = "extensionUpdateNotice";
+
+type ExtensionUpdateNotice = {
+  latestVersion: string;
+};
+
 const tabState = new Map<number, { text?: string; lastHighlight?: HighlightClicked }>();
 const readyTabs = new Set<number>();
 const RSVP_CONTEXT_MENU_ID = "tldr-start-rsvp-selection";
@@ -42,6 +47,101 @@ const pendingByTab = new Map<
     cursor?: ApplyRsvpCursorRequest | ClearRsvpCursorRequest;
   }
 >();
+
+function parseComparableVersion(version: string): number[] | null {
+  const core = version.trim().split("-")[0] ?? "";
+  if (!core) {
+    return null;
+  }
+
+  const parts = core.split(".");
+  if (!parts.length) {
+    return null;
+  }
+
+  const parsed: number[] = [];
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) {
+      return null;
+    }
+    parsed.push(Number(part));
+  }
+  return parsed;
+}
+
+function isNewerVersion(localVersion: string, remoteVersion: string): boolean {
+  const local = parseComparableVersion(localVersion);
+  const remote = parseComparableVersion(remoteVersion);
+  if (!local || !remote) {
+    return false;
+  }
+
+  const maxLength = Math.max(local.length, remote.length);
+  for (let index = 0; index < maxLength; index += 1) {
+    const localPart = local[index] ?? 0;
+    const remotePart = remote[index] ?? 0;
+    if (remotePart > localPart) {
+      return true;
+    }
+    if (remotePart < localPart) {
+      return false;
+    }
+  }
+  return false;
+}
+
+async function setExtensionUpdateNotice(notice: ExtensionUpdateNotice): Promise<void> {
+  await new Promise<void>((resolve) => {
+    chrome.storage.local.set({ [EXTENSION_UPDATE_NOTICE_KEY]: notice }, () => resolve());
+  });
+}
+
+async function clearExtensionUpdateNotice(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    chrome.storage.local.remove([EXTENSION_UPDATE_NOTICE_KEY], () => resolve());
+  });
+}
+
+async function checkForExtensionUpdate(): Promise<void> {
+  let apiBase = "";
+  try {
+    apiBase = getApiBase();
+  } catch {
+    await clearExtensionUpdateNotice();
+    return;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}/api/extension/version`, {
+      method: "GET",
+      cache: "no-store",
+    });
+  } catch {
+    await clearExtensionUpdateNotice();
+    return;
+  }
+
+  if (!response.ok) {
+    await clearExtensionUpdateNotice();
+    return;
+  }
+
+  const data = (await response.json().catch(() => ({}))) as { version?: unknown };
+  const latestVersion = typeof data.version === "string" ? data.version.trim() : "";
+  if (!latestVersion) {
+    await clearExtensionUpdateNotice();
+    return;
+  }
+
+  const localVersion = chrome.runtime.getManifest().version;
+  if (isNewerVersion(localVersion, latestVersion)) {
+    await setExtensionUpdateNotice({ latestVersion });
+    return;
+  }
+
+  await clearExtensionUpdateNotice();
+}
 
 async function getStoredToken(): Promise<StoredExtensionToken | null> {
   return await new Promise((resolve) => {
@@ -407,6 +507,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.runtime.onInstalled.addListener(() => {
   configureSidePanelActionClick();
+  void checkForExtensionUpdate();
   chrome.contextMenus.removeAll(() => {
     runtimeLastError("bg", "chrome.contextMenus.removeAll");
     chrome.contextMenus.create(
@@ -422,6 +523,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
   configureSidePanelActionClick();
+  void checkForExtensionUpdate();
 });
 
 // Configure immediately when the service worker is evaluated.

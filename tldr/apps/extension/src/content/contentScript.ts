@@ -20,7 +20,6 @@ import type {
   ApplyHighlightsRequest,
   ApplyRsvpCursorRequest,
   ClearRsvpCursorRequest,
-  ContentConnect,
   ContentReady,
   ExtractRequest,
   ExtractResult,
@@ -64,7 +63,7 @@ let bubbleExpanded = false;
 let highlightContrast = DEFAULT_HIGHLIGHT_CONTRAST;
 let extensionThemeBaseColor = DEFAULT_EXTENSION_THEME_BASE_COLOR;
 let storageInitialized = false;
-let rsvpCursorRange: Range | null = null;
+let rsvpCursorWrapper: HTMLSpanElement | null = null;
 
 function signalContentReady() {
   // This must run only after `chrome.runtime.onMessage.addListener(...)` is registered,
@@ -141,11 +140,22 @@ function ensureHighlightStyles() {
 }
 
 function clearRsvpCursor() {
-  rsvpCursorRange = null;
   if ("highlights" in CSS) {
     CSS.highlights.delete(HIGHLIGHT_NAME_RSVP_CURSOR);
   }
-  document.querySelectorAll(`span[${RSVP_CURSOR_ATTR}]`).forEach((node) => node.replaceWith(...node.childNodes));
+  const wrappers: HTMLSpanElement[] = [];
+  if (rsvpCursorWrapper) {
+    wrappers.push(rsvpCursorWrapper);
+  } else if (!("highlights" in CSS)) {
+    // Fallback cleanup for older sessions where a wrapper might exist without an in-memory reference.
+    wrappers.push(...document.querySelectorAll<HTMLSpanElement>(`span[${RSVP_CURSOR_ATTR}]`));
+  }
+  wrappers.forEach((wrapper) => {
+    if (wrapper.isConnected) {
+      wrapper.replaceWith(...wrapper.childNodes);
+    }
+  });
+  rsvpCursorWrapper = null;
 }
 
 function applyRsvpCursor(start: number, end: number, scrollIntoView: boolean, expectedWord?: string) {
@@ -185,12 +195,12 @@ function applyRsvpCursor(start: number, end: number, scrollIntoView: boolean, ex
     wrapper.setAttribute(RSVP_CURSOR_ATTR, "true");
     try {
       range.surroundContents(wrapper);
+      rsvpCursorWrapper = wrapper;
     } catch {
       // ignore ranges that cannot be wrapped
+      rsvpCursorWrapper = null;
     }
   }
-
-  rsvpCursorRange = range;
 }
 
 function applyThemeToBubbleHost(host: HTMLElement | null) {

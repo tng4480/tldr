@@ -25,17 +25,29 @@ import {
 import "./sidepanel.css";
 
 const DEFAULT_RSVP_WPM = 450;
-const RSVP_CONTEXT_WINDOW = 8;
+const EXTENSION_UPDATE_NOTICE_KEY = "extensionUpdateNotice";
 
 type RsvpToken = { word: string; start: number; end: number };
 type SelectionMatch = { start: number; end: number };
 type SidepanelPage = "tldr" | "account";
+type ExtensionUpdateNotice = { latestVersion: string };
 type AccountProfile = {
   plan: string;
   monthly_usage: number;
   monthly_limit: number;
   subscription_status?: string | null;
 };
+
+function parseExtensionUpdateNotice(value: unknown): ExtensionUpdateNotice | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const latestVersion = (value as { latestVersion?: unknown }).latestVersion;
+  if (typeof latestVersion !== "string" || !latestVersion.trim()) {
+    return null;
+  }
+  return { latestVersion: latestVersion.trim() };
+}
 
 function getAnchorIndex(word: string): number {
   const length = word.length;
@@ -194,7 +206,6 @@ function App() {
   const [activePage, setActivePage] = useState<SidepanelPage>("tldr");
   const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
   const [themeBaseColor, setThemeBaseColor] = useState<string>(DEFAULT_EXTENSION_THEME_BASE_COLOR);
-  const [pageText, setPageText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [rsvpWpm, setRsvpWpm] = useState<number>(DEFAULT_RSVP_WPM);
   const [rsvpTokens, setRsvpTokens] = useState<RsvpToken[]>([]);
@@ -204,6 +215,7 @@ function App() {
   const [rsvpIsLoading, setRsvpIsLoading] = useState<boolean>(false);
   const [rsvpError, setRsvpError] = useState<string | null>(null);
   const [rsvpCursorEnabled, setRsvpCursorEnabled] = useState<boolean>(true);
+  const [updateNotice, setUpdateNotice] = useState<ExtensionUpdateNotice | null>(null);
   const [authState, setAuthState] = useState<{
     isLoading: boolean;
     isAuthenticated: boolean;
@@ -288,24 +300,6 @@ function App() {
 
   const rsvpDisplay = useMemo(() => splitWordAroundAnchor(currentRsvpWord), [currentRsvpWord]);
 
-  const rsvpContext = useMemo(() => {
-    if (!rsvpTokens.length) {
-      return null;
-    }
-
-    const index = Math.min(rsvpIndex, rsvpTokens.length - 1);
-    const start = Math.max(0, index - RSVP_CONTEXT_WINDOW);
-    const end = Math.min(rsvpTokens.length, index + RSVP_CONTEXT_WINDOW + 1);
-
-    return {
-      before: rsvpTokens.slice(start, index).map((token) => token.word),
-      current: rsvpTokens[index]?.word ?? "",
-      after: rsvpTokens.slice(index + 1, end).map((token) => token.word),
-      hasPrefix: start > 0,
-      hasSuffix: end < rsvpTokens.length,
-    };
-  }, [rsvpIndex, rsvpTokens]);
-
   const shellThemeStyle = useMemo(() => {
     const theme = deriveExtensionThemeColors(themeBaseColor);
     return {
@@ -372,7 +366,6 @@ function App() {
 
       pendingExtractRef.current = { requestId, tabId: activeTabId, resolve, reject, timeoutId };
       setError(null);
-      setPageText("");
       chrome.runtime.sendMessage({
         type: "ExtractRequest",
         requestId,
@@ -412,6 +405,31 @@ function App() {
         window.clearTimeout(themeWriteTimeoutRef.current);
       }
     };
+  }, []);
+
+  useEffect(() => {
+    const applyNotice = (raw: unknown) => {
+      setUpdateNotice(parseExtensionUpdateNotice(raw));
+    };
+
+    chrome.storage.local.get([EXTENSION_UPDATE_NOTICE_KEY], (result) => {
+      const raw = (result as Record<string, unknown>)?.[EXTENSION_UPDATE_NOTICE_KEY];
+      applyNotice(raw);
+    });
+
+    const handler = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+      if (areaName !== "local") {
+        return;
+      }
+      const noticeChange = changes[EXTENSION_UPDATE_NOTICE_KEY];
+      if (!noticeChange) {
+        return;
+      }
+      applyNotice(noticeChange.newValue);
+    };
+
+    chrome.storage.onChanged.addListener(handler);
+    return () => chrome.storage.onChanged.removeListener(handler);
   }, []);
 
   const loadAccountProfile = useCallback(async () => {
@@ -465,7 +483,6 @@ function App() {
       log("sp", "onMessage", { type: message.type, tabId: (message as any).tabId, requestId: (message as any).requestId });
       if (message.type === "ExtractResult") {
         setError(message.error ?? null);
-        setPageText(message.text ?? "");
 
         const pending = pendingExtractRef.current;
         if (pending && pending.requestId === message.requestId && pending.tabId === message.tabId) {
@@ -964,6 +981,11 @@ function App() {
             Settings
           </button>
         </div>
+        {updateNotice ? (
+          <div className="assist-ext-update-banner" role="status">
+            Update available (v{updateNotice.latestVersion}). Please update the extension.
+          </div>
+        ) : null}
       </header>
 
       {activePage === "tldr" ? (
