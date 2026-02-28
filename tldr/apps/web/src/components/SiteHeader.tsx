@@ -23,10 +23,10 @@ export default function SiteHeader() {
             <Link href="/examples/hard-text">Hard text demo</Link>
           </Button> */}
           <Button asChild variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground">
-            <Link href="/pricing">Pricing</Link>
+            <Link href="/extension">Extension</Link>
           </Button>
           <Button asChild variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground">
-            <Link href="/extension">Extension</Link>
+            <Link href="/pricing">Pricing</Link>
           </Button>
           <Button asChild variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground">
             <Link href="/read-pdf">Read Files</Link>
@@ -43,9 +43,9 @@ export default function SiteHeader() {
               <Button variant="outline" className="h-10 rounded-full px-5" onClick={() => signIn("google")}>
                 Sign in with Google
               </Button>
-              <Button variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground" onClick={() => signIn("github")}>
+              {/* <Button variant="ghost" className="h-9 px-3 text-sm text-foreground/88 hover:text-foreground" onClick={() => signIn("github")}>
                 Sign in with GitHub
-              </Button>
+              </Button> */}
             </>
           )}
         </div>
