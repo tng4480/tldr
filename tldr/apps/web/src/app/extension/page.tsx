@@ -93,13 +93,22 @@ export default function ExtensionPage() {
               <CardTitle>Download latest extension</CardTitle>
               <p className="text-sm text-muted-foreground">Current version: v{LATEST_EXTENSION_VERSION}</p>
             </CardHeader>
-            <CardContent className="flex flex-wrap items-center gap-3">
-              <Button asChild>
-                <a href={LATEST_EXTENSION_ZIP_URL}>Download .zip</a>
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Upload your newest extension zip and update <span className="font-mono">src/lib/extensionRelease.ts</span>.
-              </p>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button asChild>
+                  <a href={LATEST_EXTENSION_ZIP_URL}>Download extension</a>
+                </Button>
+              </div>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">Install steps (Chrome/Edge)</p>
+                <ol className="list-decimal space-y-1 pl-5">
+                  <li>Download the zip and extract it to a folder.</li>
+                  <li>Open extension settings.</li>
+                  <li>Enable Developer mode.</li>
+                  <li>Click Load unpacked and select the extracted folder.</li>
+                  <li>For updates, remove the old extension and load the new extracted folder.</li>
+                </ol>
+              </div>
             </CardContent>
           </Card>
 
