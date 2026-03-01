@@ -17,10 +17,13 @@ import {
   clampHighlightContrast,
   DEFAULT_EXTENSION_THEME_BASE_COLOR,
   DEFAULT_HIGHLIGHT_CONTRAST,
+  DEFAULT_RSVP_ANCHOR_COLOR,
   deriveExtensionThemeColors,
   EXTENSION_THEME_COLORS_KEY,
   HIGHLIGHT_CONTRAST_KEY,
   normalizeExtensionThemeBaseColor,
+  normalizeRsvpAnchorColor,
+  RSVP_ANCHOR_COLOR_KEY,
 } from "../shared/settings";
 import "./sidepanel.css";
 
@@ -206,6 +209,7 @@ function App() {
   const [activePage, setActivePage] = useState<SidepanelPage>("tldr");
   const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
   const [themeBaseColor, setThemeBaseColor] = useState<string>(DEFAULT_EXTENSION_THEME_BASE_COLOR);
+  const [rsvpAnchorColor, setRsvpAnchorColor] = useState<string>(DEFAULT_RSVP_ANCHOR_COLOR);
   const [error, setError] = useState<string | null>(null);
   const [rsvpWpm, setRsvpWpm] = useState<number>(DEFAULT_RSVP_WPM);
   const [rsvpTokens, setRsvpTokens] = useState<RsvpToken[]>([]);
@@ -251,6 +255,7 @@ function App() {
   const [manualToken, setManualToken] = useState<string>("");
   const contrastWriteTimeoutRef = useRef<number | null>(null);
   const themeWriteTimeoutRef = useRef<number | null>(null);
+  const anchorWriteTimeoutRef = useRef<number | null>(null);
 
   const pendingExtractRef = useRef<{
     requestId: string;
@@ -312,10 +317,10 @@ function App() {
       "--assist-ext-text": theme.text,
       "--assist-ext-muted": theme.muted,
       "--assist-ext-accent": theme.accent,
-      "--assist-ext-rsvp-anchor": theme.anchor,
+      "--assist-ext-rsvp-anchor": rsvpAnchorColor,
       "--assist-ext-danger": theme.danger,
     } as React.CSSProperties;
-  }, [themeBaseColor]);
+  }, [themeBaseColor, rsvpAnchorColor]);
 
   const sendRsvpCursorUpdate = useCallback(
     (activeTabId: number, token: RsvpToken, options?: { scrollIntoView?: boolean }) => {
@@ -375,9 +380,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, EXTENSION_THEME_COLORS_KEY], (result) => {
+    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, EXTENSION_THEME_COLORS_KEY, RSVP_ANCHOR_COLOR_KEY], (result) => {
       setHighlightContrast(clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]));
       setThemeBaseColor(normalizeExtensionThemeBaseColor((result as any)?.[EXTENSION_THEME_COLORS_KEY]));
+      setRsvpAnchorColor(normalizeRsvpAnchorColor((result as any)?.[RSVP_ANCHOR_COLOR_KEY]));
     });
 
     const handler = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
@@ -393,6 +399,10 @@ function App() {
       if (themeChange) {
         setThemeBaseColor(normalizeExtensionThemeBaseColor(themeChange.newValue));
       }
+      const anchorChange = (changes as any)?.[RSVP_ANCHOR_COLOR_KEY] as chrome.storage.StorageChange | undefined;
+      if (anchorChange) {
+        setRsvpAnchorColor(normalizeRsvpAnchorColor(anchorChange.newValue));
+      }
     };
 
     chrome.storage.onChanged.addListener(handler);
@@ -403,6 +413,9 @@ function App() {
       }
       if (themeWriteTimeoutRef.current) {
         window.clearTimeout(themeWriteTimeoutRef.current);
+      }
+      if (anchorWriteTimeoutRef.current) {
+        window.clearTimeout(anchorWriteTimeoutRef.current);
       }
     };
   }, []);
@@ -594,10 +607,30 @@ function App() {
     [queueThemeColorWrite],
   );
 
+  const queueAnchorColorWrite = useCallback((next: string) => {
+    if (anchorWriteTimeoutRef.current) {
+      window.clearTimeout(anchorWriteTimeoutRef.current);
+    }
+    anchorWriteTimeoutRef.current = window.setTimeout(() => {
+      chrome.storage.sync.set({ [RSVP_ANCHOR_COLOR_KEY]: next });
+    }, 120);
+  }, []);
+
+  const handleAnchorColorChange = useCallback(
+    (value: string) => {
+      const next = normalizeRsvpAnchorColor(value);
+      setRsvpAnchorColor(next);
+      queueAnchorColorWrite(next);
+    },
+    [queueAnchorColorWrite],
+  );
+
   const handleThemeReset = useCallback(() => {
     setThemeBaseColor(DEFAULT_EXTENSION_THEME_BASE_COLOR);
     queueThemeColorWrite(DEFAULT_EXTENSION_THEME_BASE_COLOR);
-  }, [queueThemeColorWrite]);
+    setRsvpAnchorColor(DEFAULT_RSVP_ANCHOR_COLOR);
+    queueAnchorColorWrite(DEFAULT_RSVP_ANCHOR_COLOR);
+  }, [queueThemeColorWrite, queueAnchorColorWrite]);
 
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -1223,8 +1256,19 @@ function App() {
                 aria-label="Theme base color"
               />
             </label>
+            <label className="assist-ext-color-item">
+              <span className="assist-ext-field-label">RSVP anchor color</span>
+              <input
+                className="assist-ext-color-input"
+                type="color"
+                value={rsvpAnchorColor}
+                onChange={(event) => handleAnchorColorChange(event.currentTarget.value)}
+                aria-label="RSVP anchor letter color"
+              />
+            </label>
             <div className="assist-ext-meta">
               One color drives the whole extension palette. Background, surface, border, and accent stay proportional.
+              The anchor color controls the highlighted pivot letter in RSVP.
             </div>
           </div>
 

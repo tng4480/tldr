@@ -2,11 +2,13 @@ export const HIGHLIGHT_CONTRAST_KEY = "tldrHighlightContrast";
 export const HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY = "tldrHighlightImportanceThreshold";
 export const HIGHLIGHT_ALGORITHM_KEY = "tldrHighlightAlgorithm";
 export const EXTENSION_THEME_COLORS_KEY = "tldrExtensionThemeColors";
+export const RSVP_ANCHOR_COLOR_KEY = "tldrRsvpAnchorColor";
 
 export const DEFAULT_HIGHLIGHT_CONTRAST = 100;
 export const DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD = 60;
 export const DEFAULT_HIGHLIGHT_ALGORITHM = "new" as const;
 export const DEFAULT_EXTENSION_THEME_BASE_COLOR = "#2f5e8d";
+export const DEFAULT_RSVP_ANCHOR_COLOR = "#e8913a";
 
 export type ExtensionThemeColors = {
   bg: string;
@@ -137,6 +139,13 @@ function complementaryHex(hex: string): string {
   const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
   const opposite = hslToRgb(hsl.h + 180, hsl.s, hsl.l);
   return rgbToHex(opposite.r, opposite.g, opposite.b);
+}
+
+export function normalizeRsvpAnchorColor(value: unknown): string {
+  if (isHexColor(value)) {
+    return value;
+  }
+  return DEFAULT_RSVP_ANCHOR_COLOR;
 }
 
 export function normalizeExtensionThemeBaseColor(value: unknown): string {
