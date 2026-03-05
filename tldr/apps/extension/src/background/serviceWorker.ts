@@ -22,6 +22,7 @@ import type {
 import { createRequestId } from "../shared/messages";
 import { getApiBase } from "../shared/config";
 import { error, log, runtimeLastError, warn } from "../shared/logger";
+import { isNewerVersion } from "../shared/version";
 
 type StoredExtensionToken = {
   token: string;
@@ -47,48 +48,6 @@ const pendingByTab = new Map<
     cursor?: ApplyRsvpCursorRequest | ClearRsvpCursorRequest;
   }
 >();
-
-function parseComparableVersion(version: string): number[] | null {
-  const core = version.trim().split("-")[0] ?? "";
-  if (!core) {
-    return null;
-  }
-
-  const parts = core.split(".");
-  if (!parts.length) {
-    return null;
-  }
-
-  const parsed: number[] = [];
-  for (const part of parts) {
-    if (!/^\d+$/.test(part)) {
-      return null;
-    }
-    parsed.push(Number(part));
-  }
-  return parsed;
-}
-
-function isNewerVersion(localVersion: string, remoteVersion: string): boolean {
-  const local = parseComparableVersion(localVersion);
-  const remote = parseComparableVersion(remoteVersion);
-  if (!local || !remote) {
-    return false;
-  }
-
-  const maxLength = Math.max(local.length, remote.length);
-  for (let index = 0; index < maxLength; index += 1) {
-    const localPart = local[index] ?? 0;
-    const remotePart = remote[index] ?? 0;
-    if (remotePart > localPart) {
-      return true;
-    }
-    if (remotePart < localPart) {
-      return false;
-    }
-  }
-  return false;
-}
 
 async function setExtensionUpdateNotice(notice: ExtensionUpdateNotice): Promise<void> {
   await new Promise<void>((resolve) => {

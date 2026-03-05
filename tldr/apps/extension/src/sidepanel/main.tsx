@@ -25,6 +25,7 @@ import {
   normalizeRsvpAnchorColor,
   RSVP_ANCHOR_COLOR_KEY,
 } from "../shared/settings";
+import { isNewerVersion } from "../shared/version";
 import "./sidepanel.css";
 
 const DEFAULT_RSVP_WPM = 450;
@@ -444,6 +445,34 @@ function App() {
     chrome.storage.onChanged.addListener(handler);
     return () => chrome.storage.onChanged.removeListener(handler);
   }, []);
+
+  useEffect(() => {
+    if (!apiBase) {
+      return;
+    }
+    let cancelled = false;
+    fetch(`${apiBase}/api/extension/version`, { method: "GET", cache: "no-store" })
+      .then((res) => (cancelled ? null : res.ok ? res.json() : null))
+      .then((data: { version?: unknown } | null) => {
+        if (cancelled || !data || typeof data.version !== "string") {
+          return;
+        }
+        const latestVersion = (data.version as string).trim();
+        if (!latestVersion) {
+          return;
+        }
+        const localVersion = chrome.runtime.getManifest().version;
+        if (isNewerVersion(localVersion, latestVersion)) {
+          chrome.storage.local.set({ [EXTENSION_UPDATE_NOTICE_KEY]: { latestVersion } });
+        } else {
+          chrome.storage.local.remove([EXTENSION_UPDATE_NOTICE_KEY]);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase]);
 
   const loadAccountProfile = useCallback(async () => {
     if (!authState.isAuthenticated) {
