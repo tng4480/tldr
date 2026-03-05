@@ -1041,9 +1041,6 @@ function App() {
             {highlightState.count !== null && !highlightState.error ? (
               <div className="assist-ext-status">Highlighted {highlightState.count} keyword matches.</div>
             ) : null}
-            <div className="assist-ext-meta">
-              Uses the same robust keyword extraction engine as the floating bubble.
-            </div>
           </section>
 
           <section className="assist-ext-section">

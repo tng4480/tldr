@@ -364,46 +364,74 @@ async function callLlm(request: LlmActionRequest): Promise<LlmActionResult> {
   }
 }
 
+const SEND_TO_TAB_MAX_ATTEMPTS = 3;
+const SEND_TO_TAB_RETRY_MS = 250;
+
+/** Content script never calls sendResponse; it sends a separate message. So this error is expected and not a real failure. */
+const MESSAGE_PORT_CLOSED = "The message port closed before a response was received.";
+
 function sendToTab(tabId: number, message: ApplyHighlightsRequest | ExtractRequest | ApplyRsvpCursorRequest | ClearRsvpCursorRequest) {
-  log("bg", "sendToTab", { tabId, type: message.type, requestId: message.requestId });
-  // chrome.tabs.sendMessage(tabId, message, () => {
-  //   const err = chrome.runtime.lastError;
-  //   if (!err) {
-  //     log("bg", "sendToTab ok", { tabId, type: message.type, requestId: message.requestId });
-  //     return;
-  //   }
+  let attempt = 0;
 
-  //   const msg = err.message || "Unable to reach content script on this page.";
-  //   warn("bg", "sendToTab failed; reporting error to sidepanel", {
-  //     tabId,
-  //     type: message.type,
-  //     requestId: message.requestId,
-  //     error: msg,
-  //   });
-  //   if (message.type === "ExtractRequest") {
-  //     broadcastToSidepanel({
-  //       type: "ExtractResult",
-  //       requestId: message.requestId,
-  //       tabId,
-  //       text: "",
-  //       sentences: [],
-  //       error: msg,
-  //     });
-  //     return;
-  //   }
+  function trySend() {
+    attempt += 1;
+    log("bg", "sendToTab", { tabId, type: message.type, requestId: message.requestId, attempt });
 
-  //   if (message.type === "ApplyHighlightsRequest") {
-  //     broadcastToSidepanel({
-  //       type: "ApplyHighlightsAck",
-  //       requestId: message.requestId,
-  //       tabId,
-  //       count: 0,
-  //       error: msg,
-  //     });
-  //   }
-  // });
-  chrome.tabs.sendMessage(tabId, message);
+    chrome.tabs.sendMessage(tabId, message, () => {
+      const err = chrome.runtime.lastError;
+      if (!err) {
+        log("bg", "sendToTab ok", { tabId, type: message.type, requestId: message.requestId });
+        return;
+      }
 
+      if (err.message === MESSAGE_PORT_CLOSED) {
+        log("bg", "sendToTab port closed (expected; content script replies via separate message)", {
+          tabId,
+          type: message.type,
+        });
+        return;
+      }
+
+      if (attempt < SEND_TO_TAB_MAX_ATTEMPTS) {
+        warn("bg", "sendToTab failed, retrying", {
+          tabId,
+          type: message.type,
+          attempt,
+          error: err.message,
+        });
+        setTimeout(trySend, SEND_TO_TAB_RETRY_MS);
+        return;
+      }
+
+      const msg = err.message || "Unable to reach content script on this page.";
+      warn("bg", "sendToTab failed after retries", {
+        tabId,
+        type: message.type,
+        requestId: message.requestId,
+        error: msg,
+      });
+      if (message.type === "ExtractRequest") {
+        broadcastToSidepanel({
+          type: "ExtractResult",
+          requestId: message.requestId,
+          tabId,
+          text: "",
+          sentences: [],
+          error: msg,
+        });
+      } else if (message.type === "ApplyHighlightsRequest") {
+        broadcastToSidepanel({
+          type: "ApplyHighlightsAck",
+          requestId: message.requestId,
+          tabId,
+          count: 0,
+          error: msg,
+        });
+      }
+    });
+  }
+
+  trySend();
 }
 
 function broadcastToSidepanel(message: ExtractResult | ApplyHighlightsAck | HighlightClicked | LlmActionResult) {
