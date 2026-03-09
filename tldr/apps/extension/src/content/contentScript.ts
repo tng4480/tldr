@@ -8,12 +8,15 @@ import {
 import type { HighlightSpan } from "@tldr/core";
 import { extractKeywordHighlightSpans, splitIntoSentences, wordCount } from "@tldr/core";
 import {
+  BUBBLE_VISIBLE_KEY,
   clampHighlightContrast,
+  DEFAULT_BUBBLE_VISIBLE,
   DEFAULT_EXTENSION_THEME_BASE_COLOR,
   DEFAULT_HIGHLIGHT_CONTRAST,
   deriveExtensionThemeColors,
   EXTENSION_THEME_COLORS_KEY,
   HIGHLIGHT_CONTRAST_KEY,
+  normalizeBubbleVisible,
   normalizeExtensionThemeBaseColor,
 } from "../shared/settings";
 import type {
@@ -62,6 +65,7 @@ let bubbleInjected = false;
 let bubbleExpanded = false;
 let highlightContrast = DEFAULT_HIGHLIGHT_CONTRAST;
 let extensionThemeBaseColor = DEFAULT_EXTENSION_THEME_BASE_COLOR;
+let bubbleVisible = DEFAULT_BUBBLE_VISIBLE;
 let storageInitialized = false;
 let rsvpCursorWrapper: HTMLSpanElement | null = null;
 
@@ -454,6 +458,16 @@ function updateBubbleVisibility() {
     return;
   }
 
+  if (!bubbleVisible) {
+    host.style.display = "none";
+    setBubbleExpanded(false);
+    const meta = host.shadowRoot?.getElementById("tldr-bubble-meta");
+    if (meta) {
+      meta.textContent = "Floating bubble is hidden in settings.";
+    }
+    return;
+  }
+
   const isSignificant = currentReadableWordCount >= SIGNIFICANT_WORD_COUNT;
   host.style.display = isSignificant ? "block" : "none";
   if (!isSignificant) {
@@ -572,16 +586,23 @@ function ensureContrastSetting() {
     return;
   }
   storageInitialized = true;
-  chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, EXTENSION_THEME_COLORS_KEY], (result) => {
+  chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, EXTENSION_THEME_COLORS_KEY, BUBBLE_VISIBLE_KEY], (result) => {
     highlightContrast = clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]);
     extensionThemeBaseColor = normalizeExtensionThemeBaseColor((result as any)?.[EXTENSION_THEME_COLORS_KEY]);
+    bubbleVisible = normalizeBubbleVisible((result as any)?.[BUBBLE_VISIBLE_KEY]);
     refreshDeemphasis();
     applyThemeToBubbleHost(document.getElementById(BUBBLE_HOST_ID));
+    updateBubbleVisibility();
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "sync") {
       return;
+    }
+    const bubbleChange = (changes as any)?.[BUBBLE_VISIBLE_KEY];
+    if (bubbleChange !== undefined) {
+      bubbleVisible = normalizeBubbleVisible(bubbleChange.newValue);
+      updateBubbleVisibility();
     }
     const change = (changes as any)?.[HIGHLIGHT_CONTRAST_KEY];
     if (!change) {

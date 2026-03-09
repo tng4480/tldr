@@ -3,12 +3,14 @@ export const HIGHLIGHT_IMPORTANCE_THRESHOLD_KEY = "tldrHighlightImportanceThresh
 export const HIGHLIGHT_ALGORITHM_KEY = "tldrHighlightAlgorithm";
 export const EXTENSION_THEME_COLORS_KEY = "tldrExtensionThemeColors";
 export const RSVP_ANCHOR_COLOR_KEY = "tldrRsvpAnchorColor";
+export const BUBBLE_VISIBLE_KEY = "tldrBubbleVisible";
 
 export const DEFAULT_HIGHLIGHT_CONTRAST = 100;
 export const DEFAULT_HIGHLIGHT_IMPORTANCE_THRESHOLD = 60;
 export const DEFAULT_HIGHLIGHT_ALGORITHM = "new" as const;
 export const DEFAULT_EXTENSION_THEME_BASE_COLOR = "#2f5e8d";
 export const DEFAULT_RSVP_ANCHOR_COLOR = "#e8913a";
+export const DEFAULT_BUBBLE_VISIBLE = true;
 
 export type ExtensionThemeColors = {
   bg: string;
@@ -146,6 +148,19 @@ export function normalizeRsvpAnchorColor(value: unknown): string {
     return value;
   }
   return DEFAULT_RSVP_ANCHOR_COLOR;
+}
+
+export function normalizeBubbleVisible(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (value === "true" || value === 1) {
+    return true;
+  }
+  if (value === "false" || value === 0) {
+    return false;
+  }
+  return DEFAULT_BUBBLE_VISIBLE;
 }
 
 export function normalizeExtensionThemeBaseColor(value: unknown): string {

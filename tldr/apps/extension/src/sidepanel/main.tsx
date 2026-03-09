@@ -14,13 +14,16 @@ import { createRequestId } from "../shared/messages";
 import { getApiBase } from "../shared/config";
 import { log, runtimeLastError, warn } from "../shared/logger";
 import {
+  BUBBLE_VISIBLE_KEY,
   clampHighlightContrast,
+  DEFAULT_BUBBLE_VISIBLE,
   DEFAULT_EXTENSION_THEME_BASE_COLOR,
   DEFAULT_HIGHLIGHT_CONTRAST,
   DEFAULT_RSVP_ANCHOR_COLOR,
   deriveExtensionThemeColors,
   EXTENSION_THEME_COLORS_KEY,
   HIGHLIGHT_CONTRAST_KEY,
+  normalizeBubbleVisible,
   normalizeExtensionThemeBaseColor,
   normalizeRsvpAnchorColor,
   RSVP_ANCHOR_COLOR_KEY,
@@ -211,6 +214,7 @@ function App() {
   const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
   const [themeBaseColor, setThemeBaseColor] = useState<string>(DEFAULT_EXTENSION_THEME_BASE_COLOR);
   const [rsvpAnchorColor, setRsvpAnchorColor] = useState<string>(DEFAULT_RSVP_ANCHOR_COLOR);
+  const [bubbleVisible, setBubbleVisible] = useState<boolean>(DEFAULT_BUBBLE_VISIBLE);
   const [error, setError] = useState<string | null>(null);
   const [rsvpWpm, setRsvpWpm] = useState<number>(DEFAULT_RSVP_WPM);
   const [rsvpTokens, setRsvpTokens] = useState<RsvpToken[]>([]);
@@ -381,10 +385,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, EXTENSION_THEME_COLORS_KEY, RSVP_ANCHOR_COLOR_KEY], (result) => {
+    chrome.storage.sync.get([HIGHLIGHT_CONTRAST_KEY, EXTENSION_THEME_COLORS_KEY, RSVP_ANCHOR_COLOR_KEY, BUBBLE_VISIBLE_KEY], (result) => {
       setHighlightContrast(clampHighlightContrast((result as any)?.[HIGHLIGHT_CONTRAST_KEY]));
       setThemeBaseColor(normalizeExtensionThemeBaseColor((result as any)?.[EXTENSION_THEME_COLORS_KEY]));
       setRsvpAnchorColor(normalizeRsvpAnchorColor((result as any)?.[RSVP_ANCHOR_COLOR_KEY]));
+      setBubbleVisible(normalizeBubbleVisible((result as any)?.[BUBBLE_VISIBLE_KEY]));
     });
 
     const handler = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
@@ -403,6 +408,10 @@ function App() {
       const anchorChange = (changes as any)?.[RSVP_ANCHOR_COLOR_KEY] as chrome.storage.StorageChange | undefined;
       if (anchorChange) {
         setRsvpAnchorColor(normalizeRsvpAnchorColor(anchorChange.newValue));
+      }
+      const bubbleChange = (changes as any)?.[BUBBLE_VISIBLE_KEY] as chrome.storage.StorageChange | undefined;
+      if (bubbleChange !== undefined) {
+        setBubbleVisible(normalizeBubbleVisible(bubbleChange.newValue));
       }
     };
 
@@ -660,6 +669,12 @@ function App() {
     setRsvpAnchorColor(DEFAULT_RSVP_ANCHOR_COLOR);
     queueAnchorColorWrite(DEFAULT_RSVP_ANCHOR_COLOR);
   }, [queueThemeColorWrite, queueAnchorColorWrite]);
+
+  const handleBubbleVisibleToggle = useCallback(() => {
+    const next = !bubbleVisible;
+    setBubbleVisible(next);
+    chrome.storage.sync.set({ [BUBBLE_VISIBLE_KEY]: next });
+  }, [bubbleVisible]);
 
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -1246,6 +1261,24 @@ function App() {
               </div>
             ) : null
           ) : null}
+
+          <div className="assist-ext-field">
+            <div className="assist-ext-field-row">
+              <div className="assist-ext-field-label">Floating bubble</div>
+              <button
+                type="button"
+                className="assist-ext-button"
+                onClick={handleBubbleVisibleToggle}
+                aria-pressed={!bubbleVisible}
+                aria-label={bubbleVisible ? "Hide bubble" : "Show bubble"}
+              >
+                {bubbleVisible ? "Hide bubble" : "Show bubble"}
+              </button>
+            </div>
+            <div className="assist-ext-meta">
+              When shown, the bubble appears on pages with 200+ words. Turn it off to hide it on all pages.
+            </div>
+          </div>
 
           <div className="assist-ext-field">
             <div className="assist-ext-field-row">
