@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
 import { Badge } from "@/components/ui/badge";
@@ -233,6 +234,11 @@ export default function HomePage() {
         <div className="space-y-12">
           <Card className="overflow-hidden border-border/70 bg-card/92 shadow-[0_22px_58px_rgba(1,8,20,0.55)]">
             <CardHeader className="space-y-3 pb-5">
+              <div>
+                <Button asChild variant="ghost" className="h-auto rounded-full border border-border/70 bg-[#24425f]/45 px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground hover:bg-[#24425f]/65">
+                  <Link href="/extension">Download the extension here</Link>
+                </Button>
+              </div>
               <CardTitle className="text-4xl font-semibold uppercase tracking-tight sm:text-5xl">Simplify long reads with confidence.</CardTitle>
               <p className="max-w-4xl text-lg text-muted-foreground">
                 Paste text, see instant readability insights, and opt in to AI-powered
