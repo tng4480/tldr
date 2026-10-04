@@ -31,10 +31,12 @@ For development with hot reload, run `npm -w apps/extension run dev`.
 
 ```bash
 npm run dev:web              # http://localhost:3000
-npm run build:web            # static production build
+npm run build:web            # static export to apps/web/out
 ```
 
 The web app needs no environment variables.
+
+The site is a static export, deployed to GitHub Pages by `.github/workflows/pages.yml` on every push to `main`. In the repository settings, set **Pages > Source** to **GitHub Actions**. The workflow serves the site from `/<repo-name>/`; to host it at the root of a custom domain instead, build with `BASE_PATH` unset.
 
 ## Privacy
 
