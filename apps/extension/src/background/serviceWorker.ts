@@ -21,17 +21,8 @@ const RSVP_CONTEXT_MENU_ID = "tldr-start-rsvp-selection";
 const LEGACY_STORAGE_KEYS = ["extensionToken", "extensionUpdateNotice"];
 
 const tabState = new Map<number, { text?: string; lastHighlight?: HighlightClicked }>();
-const readyTabs = new Set<number>();
 const pendingRsvpStartByTab = new Map<number, StartRsvpFromText>();
 let actionClickOpensPanel = false;
-const pendingByTab = new Map<
-  number,
-  {
-    extract?: ExtractRequest;
-    highlights?: ApplyHighlightsRequest;
-    cursor?: ApplyRsvpCursorRequest | ClearRsvpCursorRequest;
-  }
->();
 
 function resolveTabId(messageTabId: unknown, senderTabId: number | undefined): number | undefined {
   if (typeof messageTabId === "number" && Number.isFinite(messageTabId) && messageTabId >= 0) {
@@ -71,8 +62,45 @@ const SEND_TO_TAB_RETRY_MS = 250;
 /** Content script never calls sendResponse; it sends a separate message. So this error is expected and not a real failure. */
 const MESSAGE_PORT_CLOSED = "The message port closed before a response was received.";
 
-function sendToTab(tabId: number, message: ApplyHighlightsRequest | ExtractRequest | ApplyRsvpCursorRequest | ClearRsvpCursorRequest) {
+/** Chrome's error when no content script is listening in the tab (never injected, or the page predates the extension). */
+const NO_RECEIVER = "Receiving end does not exist";
+/** Time to let a freshly injected content script register its message listener. */
+const INJECT_SETTLE_MS = 300;
+
+type TabRequest = ApplyHighlightsRequest | ExtractRequest | ApplyRsvpCursorRequest | ClearRsvpCursorRequest;
+
+/**
+ * Delivers a request to the tab's content script.
+ *
+ * Deliberately does not depend on any in-memory "ready" state: the service worker is suspended after
+ * ~30s idle and loses all memory, but the content script (loaded by the manifest on page load) is still
+ * alive. We just try to send; only if nothing is listening do we inject once and try again.
+ */
+function sendToTab(tabId: number, message: TabRequest) {
   let attempt = 0;
+  let injected = false;
+
+  function fail(error: string) {
+    warn("bg", "sendToTab failed", { tabId, type: message.type, requestId: message.requestId, error });
+    if (message.type === "ExtractRequest") {
+      broadcastToSidepanel({
+        type: "ExtractResult",
+        requestId: message.requestId,
+        tabId,
+        text: "",
+        sentences: [],
+        error,
+      });
+    } else if (message.type === "ApplyHighlightsRequest") {
+      broadcastToSidepanel({
+        type: "ApplyHighlightsAck",
+        requestId: message.requestId,
+        tabId,
+        count: 0,
+        error,
+      });
+    }
+  }
 
   function trySend() {
     attempt += 1;
@@ -93,6 +121,21 @@ function sendToTab(tabId: number, message: ApplyHighlightsRequest | ExtractReque
         return;
       }
 
+      if (!injected && (err.message ?? "").includes(NO_RECEIVER)) {
+        // Nothing is listening: the page was open before the extension was installed/reloaded.
+        injected = true;
+        warn("bg", "No content script in tab; injecting", { tabId, type: message.type });
+        void injectContentScript(tabId).then((ok) => {
+          if (!ok) {
+            fail("Unable to reach content script on this page.");
+            return;
+          }
+          attempt = 0;
+          setTimeout(trySend, INJECT_SETTLE_MS);
+        });
+        return;
+      }
+
       if (attempt < SEND_TO_TAB_MAX_ATTEMPTS) {
         warn("bg", "sendToTab failed, retrying", {
           tabId,
@@ -104,31 +147,7 @@ function sendToTab(tabId: number, message: ApplyHighlightsRequest | ExtractReque
         return;
       }
 
-      const msg = err.message || "Unable to reach content script on this page.";
-      warn("bg", "sendToTab failed after retries", {
-        tabId,
-        type: message.type,
-        requestId: message.requestId,
-        error: msg,
-      });
-      if (message.type === "ExtractRequest") {
-        broadcastToSidepanel({
-          type: "ExtractResult",
-          requestId: message.requestId,
-          tabId,
-          text: "",
-          sentences: [],
-          error: msg,
-        });
-      } else if (message.type === "ApplyHighlightsRequest") {
-        broadcastToSidepanel({
-          type: "ApplyHighlightsAck",
-          requestId: message.requestId,
-          tabId,
-          count: 0,
-          error: msg,
-        });
-      }
+      fail(err.message || "Unable to reach content script on this page.");
     });
   }
 
@@ -155,44 +174,6 @@ function trySendStartRsvp(message: StartRsvpFromText) {
   });
 }
 
-function markPending(
-  tabId: number,
-  message: ExtractRequest | ApplyHighlightsRequest | ApplyRsvpCursorRequest | ClearRsvpCursorRequest,
-) {
-  const pending = pendingByTab.get(tabId) ?? {};
-  if (message.type === "ExtractRequest") {
-    pending.extract = message;
-  } else if (message.type === "ApplyHighlightsRequest") {
-    pending.highlights = message;
-  } else {
-    pending.cursor = message;
-  }
-  pendingByTab.set(tabId, pending);
-}
-
-function flushPending(tabId: number) {
-  const pending = pendingByTab.get(tabId);
-  if (!pending) {
-    return;
-  }
-  pendingByTab.delete(tabId);
-
-  if (pending.extract) {
-    sendToTab(tabId, pending.extract);
-  }
-  if (pending.highlights) {
-    sendToTab(tabId, pending.highlights);
-  }
-  if (pending.cursor) {
-    sendToTab(tabId, pending.cursor);
-  }
-}
-
-function resetTabReadiness(tabId: number) {
-  readyTabs.delete(tabId);
-  pendingByTab.delete(tabId);
-}
-
 function configureSidePanelActionClick() {
   if (!chrome.sidePanel?.setPanelBehavior) {
     warn("bg", "chrome.sidePanel.setPanelBehavior is unavailable; using action.onClicked fallback");
@@ -212,16 +193,7 @@ function configureSidePanelActionClick() {
   });
 }
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.url) {
-    // Real navigation to a new URL
-    resetTabReadiness(tabId);
-    log("bg", "Tab navigated, reset readiness", { tabId, url: changeInfo.url });
-  }
-});
-
 chrome.tabs.onRemoved.addListener((tabId) => {
-  resetTabReadiness(tabId);
   tabState.delete(tabId);
   pendingRsvpStartByTab.delete(tabId);
 });
@@ -331,14 +303,8 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
 
   if (typed.type === "ContentReady") {
-    const tabId = sender.tab?.id;
-    if (typeof tabId === "number") {
-      readyTabs.add(tabId);
-      log("bg", "ContentReady", { tabId });
-      flushPending(tabId);
-    } else {
-      warn("bg", "ContentReady received without sender.tab.id");
-    }
+    // Informational only: delivery never depends on this (see sendToTab).
+    log("bg", "ContentReady", { tabId: sender.tab?.id });
     sendResponse({ ok: true });
     return;
   }
@@ -361,14 +327,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     log("bg", "ExtractRequest", { tabId: resolvedTabId, requestId: request.requestId });
 
     const normalized = { ...request, tabId: resolvedTabId };
-    if (!readyTabs.has(resolvedTabId)) {
-      // Content script readiness is message-based; never send page requests until the tab reports ContentReady.
-      markPending(resolvedTabId, normalized);
-      void injectContentScript(resolvedTabId);
-      sendResponse({ ok: true });
-      return;
-    }
-
     sendToTab(resolvedTabId, normalized);
     sendResponse({ ok: true });
     return;
@@ -396,13 +354,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     });
 
     const normalized = { ...request, tabId: resolvedTabId };
-    if (!readyTabs.has(resolvedTabId)) {
-      markPending(resolvedTabId, normalized);
-      void injectContentScript(resolvedTabId);
-      sendResponse({ ok: true });
-      return;
-    }
-
     sendToTab(resolvedTabId, normalized);
     sendResponse({ ok: true });
     return;
@@ -419,13 +370,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     log("bg", typed.type, { tabId: resolvedTabId, requestId: request.requestId });
 
     const normalized = { ...request, tabId: resolvedTabId };
-    if (!readyTabs.has(resolvedTabId)) {
-      markPending(resolvedTabId, normalized);
-      void injectContentScript(resolvedTabId);
-      sendResponse({ ok: true });
-      return;
-    }
-
     sendToTab(resolvedTabId, normalized);
     sendResponse({ ok: true });
     return;
