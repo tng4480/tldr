@@ -13,7 +13,8 @@
     "lint:web": "npm --workspace apps/web run lint",
     "build:core": "npm --workspace packages/core run build",
     "build:core-dom": "npm --workspace packages/core-dom run build",
-    "build:extension": "npm --workspace apps/extension run build"
+    "build:extension": "npm --workspace apps/extension run build",
+    "lint:extension": "npm --workspace apps/extension run lint"
   },
   "devDependencies": {
     "tsup": "^8.5.0",
