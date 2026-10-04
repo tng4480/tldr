@@ -4,14 +4,11 @@ import { extractKeywordHighlightSpans, splitIntoSentences } from "@tldr/core";
 import type {
   ApplyHighlightsAck,
   ApplyRsvpCursorRequest,
-  AuthStatusResult,
   ClearRsvpCursorRequest,
   ExtractResult,
-  LlmActionResult,
   StartRsvpFromText,
 } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
-import { getApiBase } from "../shared/config";
 import { log, runtimeLastError, warn } from "../shared/logger";
 import {
   BUBBLE_VISIBLE_KEY,
@@ -28,33 +25,13 @@ import {
   normalizeRsvpAnchorColor,
   RSVP_ANCHOR_COLOR_KEY,
 } from "../shared/settings";
-import { isNewerVersion } from "../shared/version";
 import "./sidepanel.css";
 
 const DEFAULT_RSVP_WPM = 450;
-const EXTENSION_UPDATE_NOTICE_KEY = "extensionUpdateNotice";
 
 type RsvpToken = { word: string; start: number; end: number };
 type SelectionMatch = { start: number; end: number };
-type SidepanelPage = "tldr" | "account";
-type ExtensionUpdateNotice = { latestVersion: string };
-type AccountProfile = {
-  plan: string;
-  monthly_usage: number;
-  monthly_limit: number;
-  subscription_status?: string | null;
-};
-
-function parseExtensionUpdateNotice(value: unknown): ExtensionUpdateNotice | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const latestVersion = (value as { latestVersion?: unknown }).latestVersion;
-  if (typeof latestVersion !== "string" || !latestVersion.trim()) {
-    return null;
-  }
-  return { latestVersion: latestVersion.trim() };
-}
+type SidepanelPage = "tldr" | "settings";
 
 function getAnchorIndex(word: string): number {
   const length = word.length;
@@ -201,14 +178,6 @@ function buildRsvpSentenceStartIndexes(tokens: RsvpToken[], text: string, baseOf
 }
 
 function App() {
-  const apiBase = useMemo(() => {
-    try {
-      return getApiBase();
-    } catch {
-      return "";
-    }
-  }, []);
-
   const [tabId, setTabId] = useState<number | null>(null);
   const [activePage, setActivePage] = useState<SidepanelPage>("tldr");
   const [highlightContrast, setHighlightContrast] = useState<number>(DEFAULT_HIGHLIGHT_CONTRAST);
@@ -224,18 +193,6 @@ function App() {
   const [rsvpIsLoading, setRsvpIsLoading] = useState<boolean>(false);
   const [rsvpError, setRsvpError] = useState<string | null>(null);
   const [rsvpCursorEnabled, setRsvpCursorEnabled] = useState<boolean>(true);
-  const [updateNotice, setUpdateNotice] = useState<ExtensionUpdateNotice | null>(null);
-  const [authState, setAuthState] = useState<{
-    isLoading: boolean;
-    isAuthenticated: boolean;
-    expiresAt: string | null;
-    error: string | null;
-  }>({
-    isLoading: true,
-    isAuthenticated: false,
-    expiresAt: null,
-    error: null,
-  });
   const [highlightState, setHighlightState] = useState<{ isLoading: boolean; error: string | null; count: number | null }>(
     {
       isLoading: false,
@@ -243,21 +200,6 @@ function App() {
       count: null,
     },
   );
-  const [keyInfoState, setKeyInfoState] = useState<{ isLoading: boolean; error: string | null }>({
-    isLoading: false,
-    error: null,
-  });
-  const [accountState, setAccountState] = useState<{
-    isLoading: boolean;
-    profile: AccountProfile | null;
-    error: string | null;
-  }>({
-    isLoading: false,
-    profile: null,
-    error: null,
-  });
-  const [keyInfoResult, setKeyInfoResult] = useState<string>("");
-  const [manualToken, setManualToken] = useState<string>("");
   const contrastWriteTimeoutRef = useRef<number | null>(null);
   const themeWriteTimeoutRef = useRef<number | null>(null);
   const anchorWriteTimeoutRef = useRef<number | null>(null);
@@ -269,36 +211,6 @@ function App() {
     reject: (error: Error) => void;
     timeoutId: number;
   } | null>(null);
-
-  const keyInfoPayload = useMemo(() => {
-    try {
-      const parsed = JSON.parse(keyInfoResult) as { sections?: unknown; events?: unknown };
-      if (!parsed || typeof parsed !== "object") {
-        return null;
-      }
-      const sections = (parsed as any).sections;
-      if (!sections || typeof sections !== "object") {
-        return null;
-      }
-      const events = Array.isArray((parsed as any).events) ? ((parsed as any).events as any[]) : [];
-      return {
-        sections: sections as Record<string, string[]>,
-        events,
-      };
-    } catch {
-      return null;
-    }
-  }, [keyInfoResult]);
-
-  const keyInfoLines = useMemo(() => {
-    if (!keyInfoResult) {
-      return [];
-    }
-    return keyInfoResult
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-  }, [keyInfoResult]);
 
   const currentRsvpWord = useMemo(() => {
     if (!rsvpTokens.length) {
@@ -431,103 +343,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const applyNotice = (raw: unknown) => {
-      setUpdateNotice(parseExtensionUpdateNotice(raw));
-    };
-
-    chrome.storage.local.get([EXTENSION_UPDATE_NOTICE_KEY], (result) => {
-      const raw = (result as Record<string, unknown>)?.[EXTENSION_UPDATE_NOTICE_KEY];
-      applyNotice(raw);
-    });
-
-    const handler = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
-      if (areaName !== "local") {
-        return;
-      }
-      const noticeChange = changes[EXTENSION_UPDATE_NOTICE_KEY];
-      if (!noticeChange) {
-        return;
-      }
-      applyNotice(noticeChange.newValue);
-    };
-
-    chrome.storage.onChanged.addListener(handler);
-    return () => chrome.storage.onChanged.removeListener(handler);
-  }, []);
-
-  useEffect(() => {
-    if (!apiBase) {
-      return;
-    }
-    let cancelled = false;
-    fetch(`${apiBase}/api/extension/version`, { method: "GET", cache: "no-store" })
-      .then((res) => (cancelled ? null : res.ok ? res.json() : null))
-      .then((data: { version?: unknown } | null) => {
-        if (cancelled || !data || typeof data.version !== "string") {
-          return;
-        }
-        const latestVersion = (data.version as string).trim();
-        if (!latestVersion) {
-          return;
-        }
-        const localVersion = chrome.runtime.getManifest().version;
-        if (isNewerVersion(localVersion, latestVersion)) {
-          chrome.storage.local.set({ [EXTENSION_UPDATE_NOTICE_KEY]: { latestVersion } });
-        } else {
-          chrome.storage.local.remove([EXTENSION_UPDATE_NOTICE_KEY]);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBase]);
-
-  const loadAccountProfile = useCallback(async () => {
-    if (!authState.isAuthenticated) {
-      setAccountState({ isLoading: false, profile: null, error: null });
-      return;
-    }
-    if (!apiBase) {
-      setAccountState({ isLoading: false, profile: null, error: "Extension API base URL is not configured." });
-      return;
-    }
-
-    setAccountState((prev) => ({ ...prev, isLoading: true, error: null }));
-    try {
-      const response = await fetch(`${apiBase}/api/account`, { credentials: "include" });
-      const data = (await response.json().catch(() => ({}))) as {
-        error?: unknown;
-        profile?: Record<string, unknown>;
-      };
-
-      if (!response.ok || !data.profile) {
-        const message = typeof data.error === "string" ? data.error : "Unable to load account.";
-        throw new Error(message);
-      }
-
-      const profile = data.profile;
-      setAccountState({
-        isLoading: false,
-        error: null,
-        profile: {
-          plan: typeof profile.plan === "string" ? profile.plan : "free",
-          monthly_usage: typeof profile.monthly_usage === "number" ? profile.monthly_usage : 0,
-          monthly_limit: typeof profile.monthly_limit === "number" ? profile.monthly_limit : 0,
-          subscription_status: typeof profile.subscription_status === "string" ? profile.subscription_status : null,
-        },
-      });
-    } catch (err) {
-      setAccountState({
-        isLoading: false,
-        profile: null,
-        error: err instanceof Error ? err.message : "Unable to load account.",
-      });
-    }
-  }, [apiBase, authState.isAuthenticated]);
-
-  useEffect(() => {
-    const handler = (message: ExtractResult | ApplyHighlightsAck | LlmActionResult | StartRsvpFromText) => {
+    const handler = (message: ExtractResult | ApplyHighlightsAck | StartRsvpFromText) => {
       if (!message?.type) {
         return;
       }
@@ -549,10 +365,6 @@ function App() {
           error: message.error ?? null,
           count: message.count ?? 0,
         }));
-      }
-      if (message.type === "LlmActionResult" && message.action === "key_info") {
-        setKeyInfoState({ isLoading: false, error: message.error ?? null });
-        setKeyInfoResult(message.result ?? "");
       }
       if (message.type === "StartRsvpFromText") {
         const text = (message.text ?? "").trim();
@@ -696,131 +508,6 @@ function App() {
     });
   }, []);
 
-  useEffect(() => {
-    setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
-    chrome.runtime.sendMessage(
-      {
-        type: "AuthStatusRequest",
-        requestId: createRequestId("auth-status"),
-      },
-      (response: AuthStatusResult | undefined) => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          setAuthState({ isLoading: false, isAuthenticated: false, expiresAt: null, error: err.message ?? "Unknown error" });
-          return;
-        }
-        setAuthState({
-          isLoading: false,
-          isAuthenticated: Boolean(response?.isAuthenticated),
-          expiresAt: response?.expiresAt ?? null,
-          error: response?.error ?? null,
-        });
-      },
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!authState.isAuthenticated) {
-      setAccountState({ isLoading: false, profile: null, error: null });
-      return;
-    }
-    void loadAccountProfile();
-  }, [authState.isAuthenticated, loadAccountProfile]);
-
-  const handleSignIn = useCallback(() => {
-    if (!apiBase) {
-      setAuthState((prev) => ({ ...prev, error: "Extension API base URL is not configured." }));
-      return;
-    }
-    chrome.tabs.create({ url: `${apiBase}/api/auth/signin` }, () => runtimeLastError("sp", "chrome.tabs.create sign-in"));
-  }, [apiBase]);
-
-  const handleReadPdf = useCallback(() => {
-    if (!apiBase) {
-      setError("Extension API base URL is not configured.");
-      return;
-    }
-    chrome.tabs.create({ url: `${apiBase}/read-pdf` }, () => runtimeLastError("sp", "chrome.tabs.create read-pdf"));
-  }, [apiBase]);
-
-  const handleConnect = useCallback(() => {
-    setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
-    chrome.runtime.sendMessage(
-      {
-        type: "AuthConnectRequest",
-        requestId: createRequestId("auth-connect"),
-      },
-      (response: AuthStatusResult | undefined) => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          setAuthState({ isLoading: false, isAuthenticated: false, expiresAt: null, error: err.message ?? "Unknown error" });
-          return;
-        }
-        setAuthState({
-          isLoading: false,
-          isAuthenticated: Boolean(response?.isAuthenticated),
-          expiresAt: response?.expiresAt ?? null,
-          error: response?.error ?? null,
-        });
-      },
-    );
-  }, []);
-
-  const handleDisconnect = useCallback(() => {
-    setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
-    chrome.runtime.sendMessage(
-      {
-        type: "AuthClearRequest",
-        requestId: createRequestId("auth-clear"),
-      },
-      (response: AuthStatusResult | undefined) => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          setAuthState({ isLoading: false, isAuthenticated: false, expiresAt: null, error: err.message ?? "Unknown error" });
-          return;
-        }
-        setAuthState({
-          isLoading: false,
-          isAuthenticated: Boolean(response?.isAuthenticated),
-          expiresAt: response?.expiresAt ?? null,
-          error: response?.error ?? null,
-        });
-      },
-    );
-  }, []);
-
-  const handleUseManualToken = useCallback(() => {
-    const token = manualToken.trim();
-    if (!token) {
-      setAuthState((prev) => ({ ...prev, error: "Paste a token first." }));
-      return;
-    }
-    setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
-    chrome.runtime.sendMessage(
-      {
-        type: "AuthSetTokenRequest",
-        requestId: createRequestId("auth-set-token"),
-        token,
-      },
-      (response: AuthStatusResult | undefined) => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          setAuthState({ isLoading: false, isAuthenticated: false, expiresAt: null, error: err.message ?? "Unknown error" });
-          return;
-        }
-        setAuthState({
-          isLoading: false,
-          isAuthenticated: Boolean(response?.isAuthenticated),
-          expiresAt: response?.expiresAt ?? null,
-          error: response?.error ?? null,
-        });
-        if (response?.isAuthenticated) {
-          setManualToken("");
-        }
-      },
-    );
-  }, [manualToken]);
-
   const handleHighlightKeywords = useCallback(() => {
     void (async () => {
       const activeId = await getActiveTabId();
@@ -867,49 +554,6 @@ function App() {
       }
     })();
   }, [getActiveTabId, requestExtract]);
-
-  const handleKeyInfo = useCallback(() => {
-    void (async () => {
-      const activeId = await getActiveTabId();
-      if (activeId === null) {
-        setKeyInfoState({ isLoading: false, error: "No active tab." });
-        return;
-      }
-      setTabId(activeId);
-      if (!authState.isAuthenticated) {
-        setKeyInfoState({ isLoading: false, error: "Sign in to use key info." });
-        return;
-      }
-
-      setKeyInfoState({ isLoading: true, error: null });
-      setKeyInfoResult("");
-
-      try {
-        const extract = await requestExtract(activeId);
-        if (extract.error) {
-          setKeyInfoState({ isLoading: false, error: extract.error });
-          return;
-        }
-        const text = extract.text ?? "";
-        if (!text.trim()) {
-          setKeyInfoState({ isLoading: false, error: "No readable text found on this page." });
-          return;
-        }
-        chrome.runtime.sendMessage({
-          type: "LlmActionRequest",
-          requestId: createRequestId("key-info"),
-          tabId: activeId,
-          action: "key_info",
-          text,
-        });
-      } catch (err) {
-        setKeyInfoState({
-          isLoading: false,
-          error: err instanceof Error ? err.message : "Unable to extract page text.",
-        });
-      }
-    })();
-  }, [authState.isAuthenticated, getActiveTabId, requestExtract]);
 
   const handleRsvpStart = useCallback(() => {
     void (async () => {
@@ -1050,19 +694,14 @@ function App() {
             TLDR
           </button>
           <button
-            className={`assist-ext-segment ${activePage === "account" ? "assist-ext-segment--active" : ""}`}
-            onClick={() => setActivePage("account")}
+            className={`assist-ext-segment ${activePage === "settings" ? "assist-ext-segment--active" : ""}`}
+            onClick={() => setActivePage("settings")}
             role="tab"
-            aria-selected={activePage === "account"}
+            aria-selected={activePage === "settings"}
           >
             Settings
           </button>
         </div>
-        {updateNotice ? (
-          <div className="assist-ext-update-banner" role="status">
-            Update available (v{updateNotice.latestVersion}). Please update the extension.
-          </div>
-        ) : null}
       </header>
 
       {activePage === "tldr" ? (
@@ -1072,12 +711,6 @@ function App() {
             <div className="assist-ext-segmented" role="group" aria-label="Page actions">
               <button className="assist-ext-segment" onClick={handleHighlightKeywords}>
                 {highlightState.isLoading ? "Highlighting..." : "Highlight keywords"}
-              </button>
-              <button className="assist-ext-segment" onClick={handleKeyInfo} disabled={!authState.isAuthenticated}>
-                {keyInfoState.isLoading ? "Extracting..." : "Extract key info"}
-              </button>
-              <button className="assist-ext-segment" onClick={handleReadPdf}>
-                Read Files
               </button>
             </div>
             {error ? <div className="assist-ext-error">{error}</div> : null}
@@ -1134,134 +767,10 @@ function App() {
             </div>
             {rsvpError ? <div className="assist-ext-error">{rsvpError}</div> : null}
           </section>
-
-          <section className="assist-ext-section">
-            <div className="assist-ext-section-title">Key information</div>
-            {keyInfoState.isLoading ? (
-              <div className="assist-ext-status">Extracting key info...</div>
-            ) : keyInfoPayload ? (
-              <div className="assist-ext-callout">
-                {["Important dates", "Things to do", "Things to know"].map((heading) => {
-                  const items = Array.isArray((keyInfoPayload.sections as any)[heading])
-                    ? ((keyInfoPayload.sections as any)[heading] as string[])
-                    : [];
-                  return (
-                    <div key={heading} className="assist-ext-subsection">
-                      <div className="assist-ext-section-title">{heading}</div>
-                      <ul className="assist-ext-list">
-                        {(items.length ? items : ["None"]).map((item, index) => (
-                          <li key={`${heading}-${index}`} style={{ whiteSpace: "pre-wrap" }}>
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  );
-                })}
-
-                {keyInfoPayload.events?.length ? (
-                  <div className="assist-ext-subsection">
-                    <div className="assist-ext-section-title">Add to calendar</div>
-                    <ul className="assist-ext-list">
-                      {keyInfoPayload.events
-                        .filter((event) => typeof event?.calendarUrl === "string" && event.calendarUrl.length > 0)
-                        .map((event, index) => (
-                          <li key={`${event.title ?? "event"}-${index}`}>
-                            <a href={event.calendarUrl as string} target="_blank" rel="noreferrer" className="assist-ext-link">
-                              {event.title ?? "Open in Google Calendar"}
-                            </a>
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : keyInfoResult ? (
-              <ul className="assist-ext-list">
-                {keyInfoLines.map((line, index) => (
-                  <li key={`${line}-${index}`} style={{ whiteSpace: "pre-wrap" }}>
-                    {line}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="assist-ext-status">Run the key info tool to see the most important points.</div>
-            )}
-            {keyInfoState.error ? <div className="assist-ext-error">{keyInfoState.error}</div> : null}
-          </section>
         </>
       ) : (
         <section className="assist-ext-section">
-          <div className="assist-ext-section-title">Account</div>
-          <div className="assist-ext-row">
-            <span className="assist-ext-status">
-              {authState.isAuthenticated
-                ? `Connected${authState.expiresAt ? ` (expires ${new Date(authState.expiresAt).toLocaleDateString()})` : ""}`
-                : "Not connected (highlights only)."}
-            </span>
-            {authState.isAuthenticated ? (
-              <button className="assist-ext-button assist-ext-button--danger" onClick={handleDisconnect} disabled={authState.isLoading}>
-                Disconnect
-              </button>
-            ) : (
-              <>
-                <button className="assist-ext-button assist-ext-button--accent" onClick={handleSignIn} disabled={authState.isLoading}>
-                  Sign in
-                </button>
-                <button className="assist-ext-button" onClick={handleConnect} disabled={authState.isLoading}>
-                  Connect extension
-                </button>
-              </>
-            )}
-          </div>
-
-          {!authState.isAuthenticated ? (
-            <div className="assist-ext-field">
-              <div className="assist-ext-field-label">Manual token fallback</div>
-              <input
-                className="assist-ext-input"
-                type="password"
-                value={manualToken}
-                onChange={(event) => setManualToken(event.currentTarget.value)}
-                placeholder="Paste extension token from tldr /extension page"
-                aria-label="Manual extension token"
-              />
-              <div className="assist-ext-row">
-                <button
-                  className="assist-ext-button"
-                  onClick={handleUseManualToken}
-                  disabled={authState.isLoading || !manualToken.trim()}
-                >
-                  Use pasted token
-                </button>
-              </div>
-              <div className="assist-ext-meta">
-                Use this if cookie-based connect fails. Tokens can be minted and revoked on the tldr website.
-              </div>
-            </div>
-          ) : null}
-
-          {authState.isAuthenticated ? (
-            accountState.isLoading ? (
-              <div className="assist-ext-status">Loading account details...</div>
-            ) : accountState.profile ? (
-              <div className="assist-ext-field">
-                <div className="assist-ext-field-row">
-                  <div className="assist-ext-field-label">Plan</div>
-                  <div className="assist-ext-field-value">{accountState.profile.plan}</div>
-                </div>
-                <div className="assist-ext-field-row">
-                  <div className="assist-ext-field-label">Monthly usage</div>
-                  <div className="assist-ext-field-value">{accountState.profile.monthly_usage}</div>
-                </div>
-                <div className="assist-ext-field-row">
-                  <div className="assist-ext-field-label">Limit</div>
-                  <div className="assist-ext-field-value">{accountState.profile.monthly_limit}</div>
-                </div>
-              </div>
-            ) : null
-          ) : null}
-
+          <div className="assist-ext-section-title">Settings</div>
           <div className="assist-ext-field">
             <div className="assist-ext-field-row">
               <div className="assist-ext-field-label">Floating bubble</div>
@@ -1331,9 +840,6 @@ function App() {
             </div>
           </div>
 
-          {authState.error ? <div className="assist-ext-error">{authState.error}</div> : null}
-          {accountState.error ? <div className="assist-ext-error">{accountState.error}</div> : null}
-          {!apiBase ? <div className="assist-ext-error">VITE_API_BASE_URL is not configured for this build.</div> : null}
         </section>
       )}
 

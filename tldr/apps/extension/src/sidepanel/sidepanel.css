@@ -98,15 +98,6 @@ body {
   color: var(--assist-ext-muted);
 }
 
-.assist-ext-update-banner {
-  border: 1px solid color-mix(in srgb, var(--assist-ext-accent) 52%, var(--assist-ext-border));
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 12px;
-  color: var(--assist-ext-text);
-  background: color-mix(in srgb, var(--assist-ext-accent) 12%, transparent);
-}
-
 .assist-ext-header {
   display: flex;
   align-items: center;
@@ -200,11 +191,6 @@ body {
   color: var(--assist-ext-accent);
 }
 
-.assist-ext-button--danger {
-  border-color: color-mix(in srgb, var(--assist-ext-danger) 70%, #ff9a9a);
-  color: var(--assist-ext-danger);
-}
-
 .assist-ext-segmented {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
@@ -267,47 +253,9 @@ body {
   color: var(--assist-ext-muted);
 }
 
-.assist-ext-callout {
-  border: 1px solid var(--assist-ext-border-soft);
-  padding: var(--assist-ext-space-3);
-  border-radius: var(--assist-ext-radius);
-  background: color-mix(in srgb, var(--assist-ext-bg-elevated) 62%, transparent);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
-}
-
-.assist-ext-subsection {
-  display: flex;
-  flex-direction: column;
-  gap: var(--assist-ext-space-2);
-  padding-top: var(--assist-ext-space-2);
-  border-top: 1px solid var(--assist-ext-border-soft);
-}
-
-.assist-ext-subsection:first-child {
-  border-top: none;
-  padding-top: 0;
-}
-
 .assist-ext-error {
   color: var(--assist-ext-danger);
   font-size: 12px;
-}
-
-.assist-ext-link {
-  color: var(--assist-ext-accent);
-  text-decoration: none;
-}
-
-.assist-ext-link:hover {
-  text-decoration: underline;
-}
-
-.assist-ext-list {
-  margin: 0;
-  padding-left: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--assist-ext-space-2);
 }
 
 .assist-ext-meta {
@@ -341,20 +289,6 @@ body {
   font-size: 12px;
   color: var(--assist-ext-muted);
   font-variant-numeric: tabular-nums;
-}
-
-.assist-ext-input {
-  width: 100%;
-  border: 1px solid var(--assist-ext-border-soft);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--assist-ext-bg-elevated) 55%, transparent);
-  color: var(--assist-ext-text);
-  padding: 8px 10px;
-  font-size: 12px;
-}
-
-.assist-ext-input::placeholder {
-  color: color-mix(in srgb, var(--assist-ext-muted) 85%, #c9e2f6);
 }
 
 .assist-ext-color-item {

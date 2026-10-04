@@ -82,46 +82,6 @@ export type HighlightClicked = MessageBase & {
   context: string;
 };
 
-export type LlmActionRequest = MessageBase & {
-  type: "LlmActionRequest";
-  tabId: number;
-  action: "simplify" | "explain" | "key_info";
-  text: string;
-  tone?: string;
-};
-
-export type LlmActionResult = MessageBase & {
-  type: "LlmActionResult";
-  tabId: number;
-  action: "simplify" | "explain" | "key_info";
-  result: string;
-  error?: string;
-};
-
-export type AuthStatusRequest = MessageBase & {
-  type: "AuthStatusRequest";
-};
-
-export type AuthStatusResult = MessageBase & {
-  type: "AuthStatusResult";
-  isAuthenticated: boolean;
-  expiresAt?: string | null;
-  error?: string;
-};
-
-export type AuthConnectRequest = MessageBase & {
-  type: "AuthConnectRequest";
-};
-
-export type AuthSetTokenRequest = MessageBase & {
-  type: "AuthSetTokenRequest";
-  token: string;
-};
-
-export type AuthClearRequest = MessageBase & {
-  type: "AuthClearRequest";
-};
-
 export type ExtensionMessage =
   | SidepanelConnect
   | ContentConnect
@@ -133,14 +93,7 @@ export type ExtensionMessage =
   | ApplyRsvpCursorRequest
   | ClearRsvpCursorRequest
   | StartRsvpFromText
-  | HighlightClicked
-  | LlmActionRequest
-  | LlmActionResult
-  | AuthStatusRequest
-  | AuthStatusResult
-  | AuthConnectRequest
-  | AuthSetTokenRequest
-  | AuthClearRequest;
+  | HighlightClicked;
 
 export function createRequestId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;

@@ -9,35 +9,19 @@ import type {
   ExtractRequest,
   ExtractResult,
   HighlightClicked,
-  AuthClearRequest,
-  AuthConnectRequest,
-  AuthSetTokenRequest,
-  AuthStatusRequest,
-  AuthStatusResult,
-  LlmActionRequest,
-  LlmActionResult,
   SidepanelConnect,
   StartRsvpFromText,
 } from "../shared/messages";
 import { createRequestId } from "../shared/messages";
-import { getApiBase } from "../shared/config";
-import { error, log, runtimeLastError, warn } from "../shared/logger";
-import { isNewerVersion } from "../shared/version";
+import { log, runtimeLastError, warn } from "../shared/logger";
 
-type StoredExtensionToken = {
-  token: string;
-  expiresAt: string;
-};
+const RSVP_CONTEXT_MENU_ID = "tldr-start-rsvp-selection";
 
-const EXTENSION_UPDATE_NOTICE_KEY = "extensionUpdateNotice";
-
-type ExtensionUpdateNotice = {
-  latestVersion: string;
-};
+// Storage keys written by versions that had accounts and an update check. Removed on install/update.
+const LEGACY_STORAGE_KEYS = ["extensionToken", "extensionUpdateNotice"];
 
 const tabState = new Map<number, { text?: string; lastHighlight?: HighlightClicked }>();
 const readyTabs = new Set<number>();
-const RSVP_CONTEXT_MENU_ID = "tldr-start-rsvp-selection";
 const pendingRsvpStartByTab = new Map<number, StartRsvpFromText>();
 let actionClickOpensPanel = false;
 const pendingByTab = new Map<
@@ -48,183 +32,6 @@ const pendingByTab = new Map<
     cursor?: ApplyRsvpCursorRequest | ClearRsvpCursorRequest;
   }
 >();
-
-async function setExtensionUpdateNotice(notice: ExtensionUpdateNotice): Promise<void> {
-  await new Promise<void>((resolve) => {
-    chrome.storage.local.set({ [EXTENSION_UPDATE_NOTICE_KEY]: notice }, () => resolve());
-  });
-}
-
-async function clearExtensionUpdateNotice(): Promise<void> {
-  await new Promise<void>((resolve) => {
-    chrome.storage.local.remove([EXTENSION_UPDATE_NOTICE_KEY], () => resolve());
-  });
-}
-
-async function checkForExtensionUpdate(): Promise<void> {
-  let apiBase = "";
-  try {
-    apiBase = getApiBase();
-  } catch {
-    await clearExtensionUpdateNotice();
-    return;
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(`${apiBase}/api/extension/version`, {
-      method: "GET",
-      cache: "no-store",
-    });
-  } catch {
-    await clearExtensionUpdateNotice();
-    return;
-  }
-
-  if (!response.ok) {
-    await clearExtensionUpdateNotice();
-    return;
-  }
-
-  const data = (await response.json().catch(() => ({}))) as { version?: unknown };
-  const latestVersion = typeof data.version === "string" ? data.version.trim() : "";
-  if (!latestVersion) {
-    await clearExtensionUpdateNotice();
-    return;
-  }
-
-  const localVersion = chrome.runtime.getManifest().version;
-  if (isNewerVersion(localVersion, latestVersion)) {
-    await setExtensionUpdateNotice({ latestVersion });
-    return;
-  }
-
-  await clearExtensionUpdateNotice();
-}
-
-async function getStoredToken(): Promise<StoredExtensionToken | null> {
-  return await new Promise((resolve) => {
-    chrome.storage.local.get(["extensionToken"], (result) => {
-      const raw = (result as any)?.extensionToken as unknown;
-      if (!raw || typeof raw !== "object") {
-        resolve(null);
-        return;
-      }
-      const token = (raw as any).token;
-      const expiresAt = (raw as any).expiresAt;
-      if (typeof token !== "string" || typeof expiresAt !== "string" || !token || !expiresAt) {
-        resolve(null);
-        return;
-      }
-      resolve({ token, expiresAt });
-    });
-  });
-}
-
-async function setStoredToken(value: StoredExtensionToken): Promise<void> {
-  await new Promise<void>((resolve) => {
-    chrome.storage.local.set({ extensionToken: value }, () => resolve());
-  });
-}
-
-async function clearStoredToken(): Promise<void> {
-  await new Promise<void>((resolve) => {
-    chrome.storage.local.remove(["extensionToken"], () => resolve());
-  });
-}
-
-function isTokenExpired(expiresAt: string): boolean {
-  const expiry = Date.parse(expiresAt);
-  if (!Number.isFinite(expiry)) {
-    return true;
-  }
-  return expiry <= Date.now() + 60_000;
-}
-
-async function fetchNewToken(): Promise<StoredExtensionToken | null> {
-  try {
-    const apiBase = getApiBase();
-    const response = await fetch(`${apiBase}/api/extension/token`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (!response.ok) {
-      return null;
-    }
-    const data = (await response.json()) as { token?: unknown; expiresAt?: unknown };
-    if (typeof data?.token !== "string" || typeof data?.expiresAt !== "string") {
-      return null;
-    }
-    return { token: data.token, expiresAt: data.expiresAt };
-  } catch {
-    return null;
-  }
-}
-
-type ManualTokenVerification =
-  | { ok: true; token: StoredExtensionToken }
-  | { ok: false; error: string };
-
-async function verifyManualToken(rawToken: string): Promise<ManualTokenVerification> {
-  try {
-    const apiBase = getApiBase();
-    const response = await fetch(`${apiBase}/api/extension/token/verify`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${rawToken}`,
-      },
-    });
-    const data = (await response.json().catch(() => ({}))) as {
-      expiresAt?: unknown;
-      error?: unknown;
-    };
-
-    if (!response.ok) {
-      const message =
-        typeof data.error === "string"
-          ? data.error
-          : "Token verification failed.";
-      return { ok: false, error: message };
-    }
-
-    if (typeof data.expiresAt !== "string" || !data.expiresAt) {
-      return { ok: false, error: "Token verification returned invalid expiry." };
-    }
-
-    return {
-      ok: true,
-      token: {
-        token: rawToken,
-        expiresAt: data.expiresAt,
-      },
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Token verification failed.",
-    };
-  }
-}
-
-async function ensureExtensionToken(): Promise<StoredExtensionToken | null> {
-  const existing = await getStoredToken();
-  if (existing && !isTokenExpired(existing.expiresAt)) {
-    return existing;
-  }
-
-  if (existing) {
-    await clearStoredToken();
-  }
-
-  const fresh = await fetchNewToken();
-  if (fresh) {
-    await setStoredToken(fresh);
-    return fresh;
-  }
-
-  return null;
-}
 
 function resolveTabId(messageTabId: unknown, senderTabId: number | undefined): number | undefined {
   if (typeof messageTabId === "number" && Number.isFinite(messageTabId) && messageTabId >= 0) {
@@ -256,71 +63,6 @@ async function injectContentScript(tabId: number): Promise<boolean> {
       resolve(ok);
     });
   });
-}
-
-async function callLlm(request: LlmActionRequest): Promise<LlmActionResult> {
-  const token = await ensureExtensionToken();
-  if (!token) {
-    return {
-      type: "LlmActionResult",
-      requestId: request.requestId,
-      tabId: request.tabId,
-      action: request.action,
-      result: "",
-      error: "Sign in on the TLDR website to use summaries.",
-    };
-  }
-
-  const body =
-    request.action === "key_info"
-      ? { text: request.text, mode: "key_info" }
-      : request.action === "simplify"
-        ? { text: request.text, readingLevel: "plain", tone: "preserve" }
-        : { text: request.text, readingLevel: "plain", tone: "descriptive" };
-
-  try {
-    const apiBase = getApiBase();
-    const url =
-      request.action === "key_info"
-        ? `${apiBase}/api/whole-text`
-        : `${apiBase}/api/simplify`;
-    log("bg", "LLM request start", { tabId: request.tabId, action: request.action, url, bytes: request.text.length });
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token.token}` },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      warn("bg", "LLM request failed", { status: response.status, data });
-      return {
-        type: "LlmActionResult",
-        requestId: request.requestId,
-        tabId: request.tabId,
-        action: request.action,
-        result: "",
-        error: data?.error ?? "LLM request failed",
-      };
-    }
-    log("bg", "LLM request ok", { tabId: request.tabId, action: request.action });
-    return {
-      type: "LlmActionResult",
-      requestId: request.requestId,
-      tabId: request.tabId,
-      action: request.action,
-      result: data?.simplifiedText ?? data?.resultText ?? "",
-    };
-  } catch (error) {
-    warn("bg", "LLM request threw", error);
-    return {
-      type: "LlmActionResult",
-      requestId: request.requestId,
-      tabId: request.tabId,
-      action: request.action,
-      result: "",
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
-  }
 }
 
 const SEND_TO_TAB_MAX_ATTEMPTS = 3;
@@ -393,7 +135,7 @@ function sendToTab(tabId: number, message: ApplyHighlightsRequest | ExtractReque
   trySend();
 }
 
-function broadcastToSidepanel(message: ExtractResult | ApplyHighlightsAck | HighlightClicked | LlmActionResult) {
+function broadcastToSidepanel(message: ExtractResult | ApplyHighlightsAck | HighlightClicked) {
   log("bg", "broadcastToSidepanel", { type: message.type, tabId: message.tabId, requestId: message.requestId });
   // Fire-and-forget: the sidepanel does not call `sendResponse`, so using a callback here
   // produces noisy "message port closed before a response was received" warnings.
@@ -470,13 +212,6 @@ function configureSidePanelActionClick() {
   });
 }
 
-// chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-//   // When a tab navigates, any existing content script is torn down. Treat the tab as not-ready
-//   // until it sends ContentReady again for the new document.
-//   if (changeInfo.status === "loading") {
-//     resetTabReadiness(tabId);
-//   }
-// });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url) {
     // Real navigation to a new URL
@@ -484,7 +219,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     log("bg", "Tab navigated, reset readiness", { tabId, url: changeInfo.url });
   }
 });
-
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   resetTabReadiness(tabId);
@@ -494,7 +228,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.runtime.onInstalled.addListener(() => {
   configureSidePanelActionClick();
-  void checkForExtensionUpdate();
+  chrome.storage.local.remove(LEGACY_STORAGE_KEYS, () => runtimeLastError("bg", "chrome.storage.local.remove legacy keys"));
   chrome.contextMenus.removeAll(() => {
     runtimeLastError("bg", "chrome.contextMenus.removeAll");
     chrome.contextMenus.create(
@@ -510,7 +244,6 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
   configureSidePanelActionClick();
-  void checkForExtensionUpdate();
 });
 
 // Configure immediately when the service worker is evaluated.
@@ -569,133 +302,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 
   log("bg", "onMessage", { type: typed.type, senderTabId: sender.tab?.id });
 
-  if (typed.type === "AuthStatusRequest") {
-    const request = message as AuthStatusRequest;
-    getStoredToken()
-      .then((stored) => {
-        if (!stored || isTokenExpired(stored.expiresAt)) {
-          if (stored) {
-            return clearStoredToken().then(() => null);
-          }
-          return null;
-        }
-        return stored;
-      })
-      .then((stored) => {
-        sendResponse({
-          type: "AuthStatusResult",
-          requestId: request.requestId,
-          isAuthenticated: Boolean(stored),
-          expiresAt: stored?.expiresAt ?? null,
-        } satisfies AuthStatusResult);
-      })
-      .catch((e) => {
-        sendResponse({
-          type: "AuthStatusResult",
-          requestId: request.requestId,
-          isAuthenticated: false,
-          expiresAt: null,
-          error: e instanceof Error ? e.message : "Unknown error",
-        } satisfies AuthStatusResult);
-      });
-    return true;
-  }
-
-  if (typed.type === "AuthConnectRequest") {
-    const request = message as AuthConnectRequest;
-    ensureExtensionToken()
-      .then((token) => {
-        sendResponse({
-          type: "AuthStatusResult",
-          requestId: request.requestId,
-          isAuthenticated: Boolean(token),
-          expiresAt: token?.expiresAt ?? null,
-          error: token ? undefined : "Not signed in.",
-        } satisfies AuthStatusResult);
-      })
-      .catch((e) => {
-        sendResponse({
-          type: "AuthStatusResult",
-          requestId: request.requestId,
-          isAuthenticated: false,
-          expiresAt: null,
-          error: e instanceof Error ? e.message : "Unknown error",
-        } satisfies AuthStatusResult);
-      });
-    return true;
-  }
-
-  if (typed.type === "AuthSetTokenRequest") {
-    const request = message as AuthSetTokenRequest;
-    const rawToken = request.token.trim();
-
-    if (!rawToken) {
-      sendResponse({
-        type: "AuthStatusResult",
-        requestId: request.requestId,
-        isAuthenticated: false,
-        expiresAt: null,
-        error: "Paste a token first.",
-      } satisfies AuthStatusResult);
-      return true;
-    }
-
-    verifyManualToken(rawToken)
-      .then(async (result) => {
-        if (!result.ok) {
-          sendResponse({
-            type: "AuthStatusResult",
-            requestId: request.requestId,
-            isAuthenticated: false,
-            expiresAt: null,
-            error: result.error,
-          } satisfies AuthStatusResult);
-          return;
-        }
-
-        await setStoredToken(result.token);
-        sendResponse({
-          type: "AuthStatusResult",
-          requestId: request.requestId,
-          isAuthenticated: true,
-          expiresAt: result.token.expiresAt,
-        } satisfies AuthStatusResult);
-      })
-      .catch((e) => {
-        sendResponse({
-          type: "AuthStatusResult",
-          requestId: request.requestId,
-          isAuthenticated: false,
-          expiresAt: null,
-          error: e instanceof Error ? e.message : "Unknown error",
-        } satisfies AuthStatusResult);
-      });
-    return true;
-  }
-
-  if (typed.type === "AuthClearRequest") {
-    const request = message as AuthClearRequest;
-    clearStoredToken()
-      .then(() => {
-        sendResponse({
-          type: "AuthStatusResult",
-          requestId: request.requestId,
-          isAuthenticated: false,
-          expiresAt: null,
-        } satisfies AuthStatusResult);
-      })
-      .catch((e) => {
-        sendResponse({
-          type: "AuthStatusResult",
-          requestId: request.requestId,
-          isAuthenticated: false,
-          expiresAt: null,
-          error: e instanceof Error ? e.message : "Unknown error",
-        } satisfies AuthStatusResult);
-      });
-    return true;
-  }
-
   if (typed.type === "SidepanelConnect") {
     const connect = message as SidepanelConnect;
     const resolvedTabId = resolveTabId(connect.tabId, sender.tab?.id);
@@ -724,18 +330,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return;
   }
 
-  // if (typed.type === "ContentReady") {
-  //   const ready = message as ContentReady;
-  //   const resolvedTabId = resolveTabId(ready.tabId, sender.tab?.id);
-  //   if (resolvedTabId !== undefined) {
-  //     readyTabs.add(resolvedTabId);
-  //     log("bg", "ContentReady", { tabId: resolvedTabId });
-  //     flushPending(resolvedTabId);
-  //   }
-  //   sendResponse({ ok: true });
-  //   return;
-  // }
-
   if (typed.type === "ContentReady") {
     const tabId = sender.tab?.id;
     if (typeof tabId === "number") {
@@ -748,7 +342,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     sendResponse({ ok: true });
     return;
   }
-
 
   if (typed.type === "ExtractRequest") {
     const request = message as ExtractRequest;
@@ -823,7 +416,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
       return;
     }
 
-    log("bg", typed.type, { tabId: resolvedTabId, requestId: (request as any).requestId });
+    log("bg", typed.type, { tabId: resolvedTabId, requestId: request.requestId });
 
     const normalized = { ...request, tabId: resolvedTabId };
     if (!readyTabs.has(resolvedTabId)) {
@@ -875,19 +468,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
       broadcastToSidepanel({ ...clicked, tabId: resolvedTabId });
     }
     log("bg", "HighlightClicked", { tabId: resolvedTabId, requestId: clicked.requestId });
-    sendResponse({ ok: true });
-    return;
-  }
-
-  if (typed.type === "LlmActionRequest") {
-    const request = message as LlmActionRequest;
-    log("bg", "LlmActionRequest", {
-      tabId: request.tabId,
-      requestId: request.requestId,
-      action: request.action,
-      bytes: request.text?.length ?? 0,
-    });
-    callLlm(request).then((result) => broadcastToSidepanel(result)).catch((e) => error("bg", "LLM call failed", e));
     sendResponse({ ok: true });
     return;
   }

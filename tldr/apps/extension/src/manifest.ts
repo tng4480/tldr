@@ -3,7 +3,7 @@ import { defineManifest } from "@crxjs/vite-plugin";
 export default defineManifest(() => ({
   manifest_version: 3,
   name: "TLDR Reading Assistant",
-  version: "1.1.4",
+  version: "1.2.0",
   description: "Inline highlights and side panel reading assistant.",
   icons: {
     16: "tldr16.png",
