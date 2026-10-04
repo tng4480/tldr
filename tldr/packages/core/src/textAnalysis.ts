@@ -89,13 +89,6 @@ const NUMBER_WORDS = new Set([
   "quarter",
 ]);
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => typeof item === "string");
-}
-
 export function splitIntoSentences(text: string): string[] {
   const normalised = text.replace(/\s+/g, " ").trim();
   if (!normalised) {
@@ -112,27 +105,7 @@ export function wordCount(text: string): number {
   return matches ? matches.length : 0;
 }
 
-function countSyllables(word: string): number {
-  const cleaned = word.toLowerCase().replace(/[^a-z]/g, "");
-  if (!cleaned) {
-    return 0;
-  }
-  const syllables = cleaned.match(/[aeiouy]+/g);
-  const count = syllables ? syllables.length : 1;
-  return Math.max(1, count);
-}
-
-export function fleschReadingEase(text: string): number {
-  const sentences = splitIntoSentences(text);
-  const words = text.match(/\b\w+\b/g) ?? [];
-  const sentenceCount = Math.max(1, sentences.length);
-  const wordTotal = Math.max(1, words.length);
-  const syllableTotal = words.reduce((total, word) => total + countSyllables(word), 0);
-  const score = 206.835 - 1.015 * (wordTotal / sentenceCount) - 84.6 * (syllableTotal / wordTotal);
-  return Math.max(0, Math.min(100, Math.round(score * 10) / 10));
-}
-
-export const STOP_WORDS = new Set([
+const STOP_WORDS = new Set([
   "the",
   "and",
   "that",
@@ -199,72 +172,6 @@ export const STOP_WORDS = new Set([
   "must",
   "along","at", "out", "using", "if", "add"
 ]);
-
-export function extractKeywords(text: string, topK = 6): string[] {
-  const words =
-    text
-      .toLowerCase()
-      .match(/\b[a-z][a-z\-']+\b/g)
-      ?.filter((word) => !STOP_WORDS.has(word)) ?? [];
-
-  const counts = new Map<string, number>();
-  for (const word of words) {
-    counts.set(word, (counts.get(word) ?? 0) + 1);
-  }
-
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, topK)
-    .map(([word]) => word);
-}
-
-export function scoreSentences(sentences: string[], keywords: string[]): number[] {
-  const keywordSet = new Set(keywords);
-  return sentences.map((sentence) => {
-    const words = sentence.toLowerCase().match(/\b[a-z][a-z\-']+\b/g) ?? [];
-    const keywordHits = words.filter((word) => keywordSet.has(word)).length;
-    const lengthScore = Math.min(words.length / 20, 1);
-    return keywordHits * 2 + lengthScore;
-  });
-}
-
-export function pickTopSentences(sentences: string[], topN = 3): string[] {
-  if (!sentences.length) {
-    return [];
-  }
-  const keywords = extractKeywords(sentences.join(" "), 8);
-  const scores = scoreSentences(sentences, keywords);
-  return sentences
-    .map((sentence, index) => ({ sentence, score: scores[index] }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topN)
-    .map((item) => item.sentence);
-}
-
-export function detectHardSentences(sentences: string[]): boolean[] {
-  return sentences.map((sentence) => {
-    const words = sentence.match(/\b\w+\b/g) ?? [];
-    const longSentence = words.length > 24;
-    const rareWords = words.filter((word) => word.length > 10).length;
-    return longSentence || rareWords >= 3;
-  });
-}
-
-export function extractTopHighlightTerms(text: string, topWords = 12): string[] {
-  /**
-   * @deprecated Use extractKeywordHighlightSpans instead. This adapter now
-   * returns phrases derived from keyword highlighting without TF-IDF scoring.
-   */
-  const spans = extractKeywordHighlightSpans(text);
-  if (!spans.length) {
-    return [];
-  }
-  const phrases = spans.map((span) => span.text);
-  if (!Number.isFinite(topWords) || topWords <= 0) {
-    return phrases;
-  }
-  return phrases.slice(0, topWords);
-}
 
 type TokenInfo = {
   value: string;
@@ -664,7 +571,7 @@ function dedupeOverlappingSpans(candidates: HighlightCandidate[]): HighlightCand
  * Note: wink-nlp lacks dependency parsing, so we approximate noun chunks with
  * (ADJ)* + (NOUN|PROPN)+ patterns confined to sentence boundaries.
  */
-function extractKeywordHighlightSpansInternal(text: string, includeImportance: boolean): HighlightSpan[] {
+export function extractKeywordHighlightSpans(text: string): HighlightSpan[] {
   const trimmed = text.trim();
   if (!trimmed) {
     return [];
@@ -890,28 +797,12 @@ function extractKeywordHighlightSpansInternal(text: string, includeImportance: b
       }
       return 0;
     })
-    .map((candidate) =>
-      includeImportance
-        ? {
-            text: candidate.text,
-            start: candidate.start,
-            end: candidate.end,
-            importance: scorePosOnlyCandidate(candidate),
-          }
-        : {
-            text: candidate.text,
-            start: candidate.start,
-            end: candidate.end,
-          },
-    );
-}
-
-export function extractLegacyKeywordHighlightSpans(text: string): HighlightSpan[] {
-  return extractKeywordHighlightSpansInternal(text, false);
-}
-
-export function extractKeywordHighlightSpans(text: string): HighlightSpan[] {
-  return extractKeywordHighlightSpansInternal(text, true);
+    .map((candidate) => ({
+      text: candidate.text,
+      start: candidate.start,
+      end: candidate.end,
+      importance: scorePosOnlyCandidate(candidate),
+    }));
 }
 
 export function extractDateHighlights(text: string, maxMatches = 12): string[] {
@@ -950,143 +841,4 @@ export function extractDateHighlights(text: string, maxMatches = 12): string[] {
       return true;
     })
     .slice(0, maxMatches);
-}
-
-type SentenceVector = Map<string, number>;
-
-function buildSentenceVectors(text: string): { sentences: string[]; vectors: SentenceVector[] } {
-  const doc = nlp.readDoc(text);
-  const sentences = doc.sentences();
-  const sentenceCount = sentences.length();
-  if (sentenceCount === 0) {
-    return { sentences: [], vectors: [] };
-  }
-
-  const sentenceTokens: string[][] = [];
-  const documentFrequency = new Map<string, number>();
-
-  sentences.each((sentence: any) => {
-    const tokens = sentence.tokens().filter((token: any) => token.out(its.type) === "word");
-    const normalizedWords = toStringArray(tokens.out(its.normal))
-      .map((word) => word.toLowerCase())
-      .filter((word) => word && !STOP_WORDS.has(word));
-    sentenceTokens.push(normalizedWords);
-
-    const uniqueWords = new Set(normalizedWords);
-    uniqueWords.forEach((word) => {
-      documentFrequency.set(word, (documentFrequency.get(word) ?? 0) + 1);
-    });
-  });
-
-  const idf = new Map<string, number>();
-  documentFrequency.forEach((count, word) => {
-    idf.set(word, Math.log((sentenceCount + 1) / (1 + count)) + 1);
-  });
-
-  const vectors = sentenceTokens.map((words) => {
-    const vector = new Map<string, number>();
-    if (!words.length) {
-      return vector;
-    }
-    const counts = new Map<string, number>();
-    words.forEach((word) => {
-      counts.set(word, (counts.get(word) ?? 0) + 1);
-    });
-    const totalWords = words.length;
-    counts.forEach((count, word) => {
-      const tf = count / totalWords;
-      const weight = tf * (idf.get(word) ?? 0);
-      if (weight > 0) {
-        vector.set(word, weight);
-      }
-    });
-    return vector;
-  });
-
-  const sentenceTexts = toStringArray(sentences.out(its.value))
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-
-  return { sentences: sentenceTexts, vectors };
-}
-
-function cosineSimilarity(first: SentenceVector, second: SentenceVector): number {
-  if (!first.size || !second.size) {
-    return 0;
-  }
-  let dotProduct = 0;
-  let magnitudeA = 0;
-  let magnitudeB = 0;
-
-  first.forEach((value, key) => {
-    magnitudeA += value * value;
-    if (second.has(key)) {
-      dotProduct += value * (second.get(key) ?? 0);
-    }
-  });
-  second.forEach((value) => {
-    magnitudeB += value * value;
-  });
-
-  const denominator = Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB);
-  if (!denominator) {
-    return 0;
-  }
-  return dotProduct / denominator;
-}
-
-export function segmentTextIntoSubsections(
-  text: string,
-  {
-    minSentences = 2,
-    maxSentences = 5,
-    similarityThreshold = 0.2,
-  }: { minSentences?: number; maxSentences?: number; similarityThreshold?: number } = {},
-): string[] {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  const { sentences, vectors } = buildSentenceVectors(trimmed);
-  if (!sentences.length) {
-    return [];
-  }
-  if (sentences.length === 1) {
-    return [sentences[0]];
-  }
-
-  const sections: string[] = [];
-  let current: string[] = [sentences[0]];
-
-  for (let index = 1; index < sentences.length; index += 1) {
-    const similarity = cosineSimilarity(vectors[index - 1], vectors[index]);
-    const hasMinimum = current.length >= minSentences;
-    const reachedMax = current.length >= maxSentences;
-
-    if (reachedMax || (hasMinimum && similarity < similarityThreshold)) {
-      sections.push(current.join(" ").trim());
-      current = [sentences[index]];
-    } else {
-      current.push(sentences[index]);
-    }
-  }
-
-  if (current.length) {
-    sections.push(current.join(" ").trim());
-  }
-
-  return sections.filter(Boolean);
-}
-
-export async function computeStableHash(text: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text);
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) {
-    throw new Error("WebCrypto is unavailable in this environment.");
-  }
-  const hashBuffer = await subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
