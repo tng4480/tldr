@@ -8,8 +8,8 @@
     "packages/core-dom"
   ],
   "scripts": {
-    "dev:web": "npm --workspace apps/web run dev",
-    "build:web": "npm --workspace apps/web run build",
+    "dev:web": "npm run build:core && npm run build:core-dom && npm --workspace apps/web run dev",
+    "build:web": "npm run build:core && npm run build:core-dom && npm --workspace apps/web run build",
     "lint:web": "npm --workspace apps/web run lint",
     "build:core": "npm --workspace packages/core run build",
     "build:core-dom": "npm --workspace packages/core-dom run build",

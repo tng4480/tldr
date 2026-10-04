@@ -28,7 +28,7 @@ jobs:
       - run: npm ci
 
       - name: Build site
-        run: npm run build --workspace apps/web
+        run: npm run build:web
         env:
           BASE_PATH: /${{ github.event.repository.name }}
 
