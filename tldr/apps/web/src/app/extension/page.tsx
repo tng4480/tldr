@@ -1,80 +1,8 @@
-"use client";
-
-import { useState } from "react";
-import { signIn, useSession } from "next-auth/react";
 import SiteHeader from "@/components/SiteHeader";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LATEST_EXTENSION_VERSION, LATEST_EXTENSION_ZIP_URL } from "@/lib/extensionRelease";
-
-type MintedToken = {
-  token: string;
-  expiresAt: string;
-};
 
 export default function ExtensionPage() {
-  const { data: session, status } = useSession();
-  const [minting, setMinting] = useState(false);
-  const [mintError, setMintError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [mintedToken, setMintedToken] = useState<MintedToken | null>(null);
-  const [revoking, setRevoking] = useState(false);
-
-  async function handleMintToken() {
-    setMinting(true);
-    setMintError(null);
-    setCopied(false);
-    try {
-      const response = await fetch("/api/extension/token", { method: "POST" });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? "Unable to mint extension token.");
-      }
-
-      const data = await response.json();
-      setMintedToken({
-        token: data.token,
-        expiresAt: data.expiresAt,
-      });
-    } catch (error) {
-      setMintError(error instanceof Error ? error.message : "Unable to mint extension token.");
-    } finally {
-      setMinting(false);
-    }
-  }
-
-  async function handleCopyToken() {
-    if (!mintedToken?.token) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(mintedToken.token);
-      setCopied(true);
-    } catch {
-      setMintError("Unable to copy token. Copy it manually.");
-    }
-  }
-
-  async function handleRevokeTokens() {
-    setRevoking(true);
-    setMintError(null);
-    try {
-      const response = await fetch("/api/extension/token/revoke", { method: "POST" });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? "Unable to revoke extension tokens.");
-      }
-      setMintedToken(null);
-      setCopied(false);
-    } catch (error) {
-      setMintError(error instanceof Error ? error.message : "Unable to revoke extension tokens.");
-    } finally {
-      setRevoking(false);
-    }
-  }
-
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -84,85 +12,24 @@ export default function ExtensionPage() {
             <Badge variant="secondary">Browser extension</Badge>
             <h1 className="text-3xl font-semibold text-foreground">Use tldr in any reading tab</h1>
             <p className="max-w-3xl text-sm text-muted-foreground">
-              Mint an extension token and follow these steps to use bubble highlights, sidepanel highlights, and RSVP.
+              Bubble highlights, sidepanel highlights and RSVP. No account or sign-in is needed.
             </p>
           </div>
 
           <Card>
-            <CardHeader className="space-y-3">
-              <CardTitle>Download latest extension</CardTitle>
-              <p className="text-sm text-muted-foreground">Current version: v{LATEST_EXTENSION_VERSION}</p>
+            <CardHeader>
+              <CardTitle>Install (Chrome/Edge)</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button asChild>
-                  <a href={LATEST_EXTENSION_ZIP_URL}>Download extension</a>
-                </Button>
-              </div>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p className="font-medium text-foreground">Install steps (Chrome/Edge)</p>
-                <ol className="list-decimal space-y-1 pl-5">
-                  <li>Download the zip and extract it to a folder.</li>
-                  <li>Open extension settings.</li>
-                  <li>Enable Developer mode.</li>
-                  <li>Click Load unpacked and select the extracted folder.</li>
-                  <li>For updates, remove the old extension and load the new extracted folder.</li>
-                </ol>
-              </div>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <ol className="list-decimal space-y-1 pl-5">
+                <li>Download the latest extension zip from the GitHub Releases page, or build it from source.</li>
+                <li>Extract the zip to a folder.</li>
+                <li>Open the browser&apos;s extensions page and enable Developer mode.</li>
+                <li>Click Load unpacked and select the extracted folder.</li>
+                <li>For updates, remove the old extension and load the new folder.</li>
+              </ol>
             </CardContent>
           </Card>
-
-          {status === "loading" ? (
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-transparent" />
-              Loading session...
-            </div>
-          ) : (
-            <Card>
-              <CardHeader className="space-y-3">
-                <CardTitle>Mint extension token</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Keep this token private. It authorizes extension API requests for your account.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {session?.user ? (
-                  <div className="flex flex-wrap gap-2">
-                    <Button onClick={handleMintToken} disabled={minting || revoking}>
-                      {minting ? "Minting..." : "Mint extension token"}
-                    </Button>
-                    <Button variant="outline" onClick={handleRevokeTokens} disabled={minting || revoking}>
-                      {revoking ? "Revoking..." : "Revoke all tokens"}
-                    </Button>
-                  </div>
-                ) : (
-                  <Button onClick={() => signIn("google")}>Sign in to mint token</Button>
-                )}
-
-                {mintError ? (
-                  <Alert variant="destructive">
-                    <AlertTitle>Token mint failed</AlertTitle>
-                    <AlertDescription>{mintError}</AlertDescription>
-                  </Alert>
-                ) : null}
-
-                {mintedToken ? (
-                  <Alert>
-                    <AlertTitle>New extension token</AlertTitle>
-                    <AlertDescription className="space-y-3">
-                      <p className="break-all font-mono text-xs text-foreground">{mintedToken.token}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Expires: {new Date(mintedToken.expiresAt).toLocaleString()}
-                      </p>
-                      <Button variant="outline" className="h-8 px-3 text-xs" onClick={handleCopyToken}>
-                        {copied ? "Copied" : "Copy token"}
-                      </Button>
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-              </CardContent>
-            </Card>
-          )}
 
           <Card>
             <CardHeader>
@@ -193,7 +60,8 @@ export default function ExtensionPage() {
                 sidepanel.
               </p>
               <p>
-                The sidepanel also includes RSVP controls so you can read one word at a time at adjustable speed.
+                The sidepanel also includes RSVP controls so you can read one word at a time at adjustable speed, and a
+                Settings tab for the theme, highlight contrast and bubble visibility.
               </p>
             </CardContent>
           </Card>
@@ -212,10 +80,6 @@ export default function ExtensionPage() {
                 To start from a specific place: highlight/select the text where you want to begin, right-click, and
                 choose <span className="text-foreground">Start RSVP</span>. The sidepanel opens and starts from your
                 selected location.
-              </p>
-              <p>
-                If cookie-based connection fails, mint a token here and paste it into the sidepanel account tab using{" "}
-                <span className="text-foreground">Use pasted token</span>.
               </p>
               <p>
                 Use <span className="text-foreground">Pause/Resume</span>,{" "}

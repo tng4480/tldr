@@ -6,27 +6,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "test:routes:smoke": "node scripts/route-smoke.mjs",
-    "stripe:webhook:replay": "node scripts/replay-stripe-webhook.mjs"
+    "lint": "eslint"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.2",
-    "@auth/supabase-adapter": "^1.1.4",
     "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-select": "^2.1.2",
     "@radix-ui/react-separator": "^1.1.0",
     "@radix-ui/react-slot": "^1.1.0",
-    "@supabase/supabase-js": "^2.84.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.487.0",
     "next": "16.1.5",
-    "next-auth": "^4.24.13",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "sonner": "^1.7.4",
-    "stripe": "^20.0.0",
     "tailwind-merge": "^3.4.0",
     "@tldr/core": "0.1.0"
   },

@@ -1,7 +1,7 @@
 import type { ParsedDocumentBase } from "@/lib/file/baseTypes";
 
 export type PdfProcessingWarning = ParsedDocumentBase["warnings"][number] & {
-  code: "NO_TEXT_LAYER" | "LOW_TEXT_DENSITY" | "OCR_NOT_CONFIGURED";
+  code: "NO_TEXT_LAYER" | "LOW_TEXT_DENSITY";
 };
 
 export type PdfTextItem = {
